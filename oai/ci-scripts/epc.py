@@ -43,7 +43,7 @@ from multiprocessing import Process, Lock, SimpleQueue
 #-----------------------------------------------------------
 # OAI Testing modules
 #-----------------------------------------------------------
-import sshconnection as SSH 
+import sshconnection as SSH
 import helpreadme as HELP
 import constants as CONST
 
@@ -66,8 +66,8 @@ class EPCManagement():
 		self.mmeConfFile = 'mme.conf'
 		self.yamlPath = ''
 		self.isMagmaUsed = False
-		self.cfgDeploy = '--type start-mini --fqdn yes --scenario 1 --capture /tmp/oai-cn5g-v1.3.pcap' #from xml, 'mini' is default normal for docker-network.py 
-		self.cfgUnDeploy = '--type stop-mini --fqdn yes --scenario 1' #from xml, 'mini' is default normal for docker-network.py 
+		self.cfgDeploy = '--type start-mini --scenario 1 --capture /tmp/oai-cn5g-v1.5.pcap' #from xml, 'mini' is default normal for docker-network.py
+		self.cfgUnDeploy = '--type stop-mini --scenario 1' #from xml, 'mini' is default normal for docker-network.py
 
 
 #-----------------------------------------------------------
@@ -237,7 +237,7 @@ class EPCManagement():
 			sys.exit('Insufficient EPC Parameters')
 		mySSH = SSH.SSHConnection()
 		mySSH.open(self.IPAddress, self.UserName, self.Password)
-		html_cell = '<pre style="background-color:white">\n'
+		html_cell = ''
 		if re.match('ltebox', self.Type, re.IGNORECASE):
 			logging.debug('Using the SABOX simulated HSS')
 			mySSH.command('if [ -d ' + self.SourceCodePath + '/scripts ]; then echo ' + self.Password + ' | sudo -S rm -Rf ' + self.SourceCodePath + '/scripts ; fi', '\$', 5)
@@ -253,18 +253,18 @@ class EPCManagement():
 			logging.debug('Starting OAI CN5G')
 			mySSH.command('if [ -d ' + self.SourceCodePath + '/scripts ]; then echo ' + self.Password + ' | sudo -S rm -Rf ' + self.SourceCodePath + '/scripts ; fi', '\$', 5)
 			mySSH.command('mkdir -p ' + self.SourceCodePath + '/scripts', '\$', 5)
-			mySSH.command('cd /opt/oai-cn5g-fed-v1.4/docker-compose', '\$', 5)
+			mySSH.command('cd /opt/oai-cn5g-fed-v1.5/docker-compose', '\$', 5)
 			mySSH.command('python3 ./core-network.py '+self.cfgDeploy, '\$', 60)
 			if re.search('start-mini-as-ue', self.cfgDeploy):
 				dFile = 'docker-compose-mini-nrf-asue.yaml'
 			else:
 				dFile = 'docker-compose-mini-nrf.yaml'
-			mySSH.command('docker-compose -p 5gcn -f ' + dFile + ' ps -a', '\$', 60)
+			mySSH.command('docker-compose -f ' + dFile + ' ps -a', '\$', 60)
 			if mySSH.getBefore().count('Up (healthy)') != 6:
 				logging.error('Not all container healthy')
 			else:
 				logging.debug('OK --> all containers are healthy')
-			mySSH.command('docker-compose -p 5gcn -f ' + dFile + ' config | grep --colour=never image', '\$', 10)
+			mySSH.command('docker-compose -f ' + dFile + ' config | grep --colour=never image', '\$', 10)
 			listOfImages = mySSH.getBefore()
 			for imageLine in listOfImages.split('\\r\\n'):
 				res1 = re.search('image: (?P<name>[a-zA-Z0-9\-/]+):(?P<tag>[a-zA-Z0-9\-]+)', str(imageLine))
@@ -288,11 +288,8 @@ class EPCManagement():
 					html_cell += '\n'
 		else:
 			logging.error('This option should not occur!')
-		html_cell += '</pre>'
 		mySSH.close()
-		html_queue = SimpleQueue()
-		html_queue.put(html_cell)
-		HTML.CreateHtmlTestRowQueue(self.Type, 'OK', 1, html_queue)
+		HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [html_cell])
 
 	def SetAmfIPAddress(self):
 		# Not an error if we don't need an 5GCN
@@ -537,11 +534,11 @@ class EPCManagement():
 				mySSH.command('docker logs ' + c + ' > ' + self.SourceCodePath + '/logs/' + c + '.log', '\$', 5)
 
 			logging.debug('Terminating OAI CN5G')
-			mySSH.command('cd /opt/oai-cn5g-fed-v1.4/docker-compose', '\$', 5)
+			mySSH.command('cd /opt/oai-cn5g-fed-v1.5/docker-compose', '\$', 5)
 			mySSH.command('python3 ./core-network.py '+self.cfgUnDeploy, '\$', 60)
 			mySSH.command('docker volume prune --force || true', '\$', 60)
 			time.sleep(2)
-			mySSH.command('tshark -r /tmp/oai-cn5g-v1.3.pcap | egrep --colour=never "Tracking area update" ','\$', 30)
+			mySSH.command('tshark -r /tmp/oai-cn5g-v1.5.pcap | egrep --colour=never "Tracking area update" ','\$', 30)
 			result = re.search('Tracking area update request', mySSH.getBefore())
 			if result is not None:
 				message = 'UE requested ' + str(mySSH.getBefore().count('Tracking area update request')) + 'Tracking area update request(s)'
@@ -551,10 +548,7 @@ class EPCManagement():
 		else:
 			logging.error('This should not happen!')
 		mySSH.close()
-		html_queue = SimpleQueue()
-		html_cell = '<pre style="background-color:white">' + message + '</pre>'
-		html_queue.put(html_cell)
-		HTML.CreateHtmlTestRowQueue(self.Type, 'OK', 1, html_queue)
+		HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [message])
 
 	def DeployEpc(self, HTML):
 		logging.debug('Trying to deploy')
@@ -638,17 +632,13 @@ class EPCManagement():
 		# Checking for additional services
 		mySSH.command('docker-compose config', '\$', 5)
 		configResponse = mySSH.getBefore()
-		if configResponse.count('flexran_rtc') == 1:
-			mySSH.command('docker-compose up -d flexran_rtc', '\$', 60)
-			listOfContainers += ' prod-flexran-rtc'
-			expectedHealthyContainers += 1
 		if configResponse.count('trf_gen') == 1:
 			mySSH.command('docker-compose up -d trf_gen', '\$', 60)
 			listOfContainers += ' prod-trf-gen'
 			expectedHealthyContainers += 1
 
 		mySSH.command('docker-compose config | grep --colour=never image', '\$', 10)
-		html_cell = '<pre style="background-color:white">\n'
+		html_cell = ''
 		listOfImages = mySSH.getBefore()
 		for imageLine in listOfImages.split('\\r\\n'):
 			res1 = re.search('image: (?P<name>[a-zA-Z0-9\-]+):(?P<tag>[a-zA-Z0-9\-]+)', str(imageLine))
@@ -670,7 +660,6 @@ class EPCManagement():
 				if res4 is not None:
 					html_cell += '(' + res4.group('date') + ')'
 				html_cell += '\n'
-		html_cell += '</pre>'
 		# Checking if all are healthy
 		cnt = 0
 		while (cnt < 3):
@@ -686,8 +675,6 @@ class EPCManagement():
 		logging.debug(' -- ' + str(healthyNb) + ' healthy container(s)')
 		logging.debug(' -- ' + str(unhealthyNb) + ' unhealthy container(s)')
 		logging.debug(' -- ' + str(startingNb) + ' still starting container(s)')
-		html_queue = SimpleQueue()
-		html_queue.put(html_cell)
 		if healthyNb == expectedHealthyContainers:
 			mySSH.command('docker exec -d prod-oai-hss /bin/bash -c "nohup tshark -i any -f \'port 9042 or port 3868\' -w /tmp/hss_check_run.pcap 2>&1 > /dev/null"', '\$', 5)
 			if self.isMagmaUsed:
@@ -699,11 +686,11 @@ class EPCManagement():
 			mySSH.command('docker exec -d prod-oai-spgwu-tiny /bin/bash -c "nohup tshark -i any -f \'port 8805\'  -w /tmp/spgwu_check_run.pcap 2>&1 > /dev/null"', '\$', 10)
 			mySSH.close()
 			logging.debug('Deployment OK')
-			HTML.CreateHtmlTestRowQueue(self.Type, 'OK', 1, html_queue)
+			HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [html_cell])
 		else:
 			mySSH.close()
 			logging.debug('Deployment went wrong')
-			HTML.CreateHtmlTestRowQueue(self.Type, 'KO', 1, html_queue)
+			HTML.CreateHtmlTestRowQueue(self.Type, 'KO', [html_cell])
 
 	def UndeployEpc(self, HTML):
 		logging.debug('Trying to undeploy')
@@ -760,9 +747,6 @@ class EPCManagement():
 		# Checking for additional services
 		mySSH.command('docker-compose config', '\$', 5)
 		configResponse = mySSH.getBefore()
-		if configResponse.count('flexran_rtc') == 1:
-			listOfContainers += ' prod-flexran-rtc'
-			nbContainers += 1
 		if configResponse.count('trf_gen') == 1:
 			listOfContainers += ' prod-trf-gen'
 			nbContainers += 1
@@ -774,15 +758,12 @@ class EPCManagement():
 		mySSH.command('docker inspect --format=\'{{.Name}}\' prod-oai-public-net prod-oai-private-net', '\$', 10)
 		noMoreNetworkNb = mySSH.getBefore().count('No such object')
 		mySSH.close()
-		html_queue = SimpleQueue()
-		html_cell = '<pre style="background-color:white">' + message + '</pre>'
-		html_queue.put(html_cell)
 		if noMoreContainerNb == nbContainers and noMoreNetworkNb == 2:
 			logging.debug('Undeployment OK')
-			HTML.CreateHtmlTestRowQueue(self.Type, 'OK', 1, html_queue)
+			HTML.CreateHtmlTestRowQueue(self.Type, 'OK', [message])
 		else:
 			logging.debug('Undeployment went wrong')
-			HTML.CreateHtmlTestRowQueue(self.Type, 'KO', 1, html_queue)
+			HTML.CreateHtmlTestRowQueue(self.Type, 'KO', [message])
 
 	def LogCollectHSS(self):
 		mySSH = SSH.SSHConnection()
@@ -835,7 +816,7 @@ class EPCManagement():
 				mySSH.command('zip mme.log.zip mme_check_run.*', '\$', 60)
 		elif re.match('OAICN5G', self.Type, re.IGNORECASE):
 			mySSH.command('cd ' + self.SourceCodePath + '/logs','\$', 5)
-			mySSH.command('cp -f /tmp/oai-cn5g-v1.3.pcap .','\$', 30)
+			mySSH.command('cp -f /tmp/oai-cn5g-v1.5.pcap .','\$', 30)
 			mySSH.command('zip mme.log.zip oai-amf.log oai-nrf.log oai-cn5g*.pcap','\$', 30)
 			mySSH.command('mv mme.log.zip ' + self.SourceCodePath + '/scripts','\$', 30)
 		elif re.match('OAI', self.Type, re.IGNORECASE) or re.match('OAI-Rel14-CUPS', self.Type, re.IGNORECASE):

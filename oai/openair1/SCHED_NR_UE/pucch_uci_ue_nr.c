@@ -54,9 +54,6 @@
 #endif
 
 
-uint8_t nr_is_cqi_TXOp(PHY_VARS_NR_UE *ue,UE_nr_rxtx_proc_t *proc,uint8_t gNB_id);
-uint8_t nr_is_ri_TXOp(PHY_VARS_NR_UE *ue,UE_nr_rxtx_proc_t *proc,uint8_t gNB_id);
-
 long
 binary_search_float_nr(
   float elements[],
@@ -202,11 +199,10 @@ void nr_generate_pucch3_4(int32_t **txdataF,
 *********************************************************************/
 
 void pucch_procedures_ue_nr(PHY_VARS_NR_UE *ue, 
-                            uint8_t gNB_id,
                             UE_nr_rxtx_proc_t *proc,
-                            nr_phy_data_t *phy_data) {
+                            nr_phy_data_tx_t *phy_data) {
 
-  int       nr_slot_tx = proc->nr_slot_tx;
+  int nr_slot_tx = proc->nr_slot_tx;
   fapi_nr_ul_config_pucch_pdu *pucch_pdu;
   NR_UE_PUCCH *pucch_vars = &phy_data->pucch_vars;
 
@@ -216,12 +212,8 @@ void pucch_procedures_ue_nr(PHY_VARS_NR_UE *ue,
       pucch_pdu = &pucch_vars->pucch_pdu[i];
       uint16_t nb_of_prbs = pucch_pdu->prb_size;
       /* Generate PUCCH signal according to its format and parameters */
-      ue->generate_ul_signal[gNB_id] = 1;
 
-      int16_t PL = get_nr_PL(ue->Mod_id, ue->CC_id, gNB_id); /* LTE function because NR path loss not yet implemented FFS TODO NR */
-      int contributor = (10 * log10((double)(pow(2,(ue->frame_parms.numerology_index)) * nb_of_prbs)));
-
-      int16_t pucch_tx_power = pucch_pdu->pucch_tx_power + contributor + PL;
+      int16_t pucch_tx_power = pucch_pdu->pucch_tx_power;
 
       if (pucch_tx_power > ue->tx_power_max_dBm)
         pucch_tx_power = ue->tx_power_max_dBm;
@@ -302,79 +294,5 @@ void set_csi_nr(int csi_status, uint32_t csi_payload)
   else {
     dummy_csi_payload = csi_payload;
   }
-}
-
-uint8_t get_nb_symbols_pucch(NR_PUCCH_Resource_t *pucch_resource, pucch_format_nr_t format_type)
-{
-  switch (format_type) {
-    case pucch_format0_nr:
-      return pucch_resource->format.choice.format0->nrofSymbols;
-
-    case pucch_format1_nr:
-      return pucch_resource->format.choice.format1->nrofSymbols;
-
-    case pucch_format2_nr:
-      return pucch_resource->format.choice.format2->nrofSymbols;
-
-    case pucch_format3_nr:
-      return pucch_resource->format.choice.format3->nrofSymbols;
-
-    case pucch_format4_nr:
-      return pucch_resource->format.choice.format4->nrofSymbols;
-  }
-  return 0;
-}
-
-uint16_t get_starting_symb_idx(NR_PUCCH_Resource_t *pucch_resource, pucch_format_nr_t format_type)
-{
-  switch (format_type) {
-    case pucch_format0_nr:
-      return pucch_resource->format.choice.format0->startingSymbolIndex;
-
-    case pucch_format1_nr:
-      return pucch_resource->format.choice.format1->startingSymbolIndex;
-
-    case pucch_format2_nr:
-      return pucch_resource->format.choice.format2->startingSymbolIndex;
-
-    case pucch_format3_nr:
-      return pucch_resource->format.choice.format3->startingSymbolIndex;
-
-    case pucch_format4_nr:
-      return pucch_resource->format.choice.format4->startingSymbolIndex;
-  }
-  return 0;
-}
-
-int get_ics_pucch(NR_PUCCH_Resource_t *pucch_resource, pucch_format_nr_t format_type)
-{
-  switch (format_type) {
-    case pucch_format0_nr:
-      return pucch_resource->format.choice.format0->initialCyclicShift;
-
-    case pucch_format1_nr:
-      return pucch_resource->format.choice.format1->initialCyclicShift;
-      
-    case pucch_format2_nr:
-      return 0;
-
-    default:
-      return -1;
-  }
-  return -1;
-}
-
-NR_PUCCH_Resource_t *select_resource_by_id(int resource_id, NR_PUCCH_Config_t *pucch_config)
-{
-  int n_list = pucch_config->resourceToAddModList->list.count; 
-  NR_PUCCH_Resource_t *pucchres;
-  AssertFatal(n_list>0,"PUCCH resourceToAddModList is empty\n");
-
-  for (int i=0; i<n_list; i++) {
-    pucchres = pucch_config->resourceToAddModList->list.array[i];
-    if (pucchres->pucch_ResourceId == resource_id)
-      return pucchres;
-  }
-  return NULL;
 }
 

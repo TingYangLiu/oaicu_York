@@ -132,10 +132,10 @@ const nr_bandentry_t nr_bandtable[] = {
 
 uint16_t get_band(uint64_t downlink_frequency, int32_t delta_duplex)
 {
-  const uint64_t dl_freq_khz = downlink_frequency / 1000;
+  const int64_t dl_freq_khz = downlink_frequency / 1000;
   const int32_t  delta_duplex_khz = delta_duplex / 1000;
 
-  uint64_t center_freq_diff_khz = 999999999999999999; // 2^64
+  uint64_t center_freq_diff_khz = UINT64_MAX; // 2^64
   uint16_t current_band = 0;
 
   for (int ind = 0; ind < sizeofArray(nr_bandtable); ind++) {
@@ -148,11 +148,11 @@ uint16_t get_band(uint64_t downlink_frequency, int32_t delta_duplex)
     if (current_offset_khz != delta_duplex_khz)
       continue;
 
-    uint64_t center_frequency_khz = (nr_bandtable[ind].dl_max + nr_bandtable[ind].dl_min) / 2;
+    int64_t center_frequency_khz = (nr_bandtable[ind].dl_max + nr_bandtable[ind].dl_min) / 2;
 
-    if (abs(dl_freq_khz - center_frequency_khz) < center_freq_diff_khz){
+    if (labs(dl_freq_khz - center_frequency_khz) < center_freq_diff_khz){
       current_band = nr_bandtable[ind].band;
-      center_freq_diff_khz = abs(dl_freq_khz - center_frequency_khz);
+      center_freq_diff_khz = labs(dl_freq_khz - center_frequency_khz);
     }
   }
 
@@ -227,7 +227,8 @@ void get_coreset_rballoc(uint8_t *FreqDomainResource,int *n_rb,int *rb_offset) {
   *n_rb = 6*count;
 }
 
-int get_nb_periods_per_frame(uint8_t tdd_period) {
+int get_nb_periods_per_frame(uint8_t tdd_period)
+{
 
   int nb_periods_per_frame;
   switch(tdd_period) {
@@ -270,7 +271,13 @@ int get_nb_periods_per_frame(uint8_t tdd_period) {
 }
 
 
-int get_dmrs_port(int nl, uint16_t dmrs_ports) {
+int get_first_ul_slot(int nrofDownlinkSlots, int nrofDownlinkSymbols, int nrofUplinkSymbols)
+{
+  return (nrofDownlinkSlots + (nrofDownlinkSymbols != 0 && nrofUplinkSymbols == 0));
+}
+
+int get_dmrs_port(int nl, uint16_t dmrs_ports)
+{
 
   if (dmrs_ports == 0) return 0; // dci 1_0
   int p = -1;
@@ -714,6 +721,18 @@ void get_samplerate_and_bw(int mu,
   } else {
     AssertFatal(0 == 1,"Numerology %d not supported for the moment\n",mu);
   }
+}
+
+void get_K1_K2(int N1, int N2, int *K1, int *K2)
+{
+  // num of allowed k1 and k2 according to 5.2.2.2.1-3 and -4 in 38.214
+  if(N2 == N1 || N1 == 2)
+    *K1 = 2;
+  else if (N2 == 1)
+    *K1 = 5;
+  else
+    *K1 = 3;
+  *K2 = N2 > 1 ? 2 : 1;
 }
 
 // from start symbol index and nb or symbols to symbol occupation bitmap in a slot

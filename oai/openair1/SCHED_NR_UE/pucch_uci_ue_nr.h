@@ -41,7 +41,6 @@
 /************** INCLUDE *******************************************/
 
 #include "PHY/defs_nr_UE.h"
-#include "RRC/NR_UE/rrc_proto.h"
 
 #ifdef DEFINE_VARIABLES_PUCCH_UE_NR_H
 #define EXTERN
@@ -60,18 +59,10 @@
 /*************** FUNCTIONS ****************************************/
 
 void pucch_procedures_ue_nr(PHY_VARS_NR_UE *ue, 
-                            uint8_t gNB_id,
                             UE_nr_rxtx_proc_t *proc,
-                            nr_phy_data_t *phy_data);
+                            nr_phy_data_tx_t *phy_data);
 
 
 void set_csi_nr(int csi_status, uint32_t csi_payload);
 
-uint8_t get_nb_symbols_pucch(NR_PUCCH_Resource_t *pucch_resource, pucch_format_nr_t format_type);
-
-uint16_t get_starting_symb_idx(NR_PUCCH_Resource_t *pucch_resource, pucch_format_nr_t format_type);
-
-int get_ics_pucch(NR_PUCCH_Resource_t *pucch_resource, pucch_format_nr_t format_type);
-
-NR_PUCCH_Resource_t *select_resource_by_id(int resource_id, NR_PUCCH_Config_t *pucch_config);
 #endif /* PUCCH_UCI_UE_NR_H */

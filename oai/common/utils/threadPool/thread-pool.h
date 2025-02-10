@@ -236,8 +236,8 @@ static inline void abortNotifiedFIFO(notifiedFIFO_t *nf) {
 
   if (nf->outF == NULL)
     nf->inF = NULL;
+  condbroadcast(nf->notifF);
   mutexunlock(nf->lockF);
-  condsignal(nf->notifF);
 }
 
 struct one_thread {
@@ -279,6 +279,8 @@ static inline void pushTpool(tpool_t *t, notifiedFIFO_elt_t *msg) {
 
     if (msg->reponseFifo)
       pushNotifiedFIFO(msg->reponseFifo, msg);
+    else
+      delNotifiedFIFO_elt(msg);
   }
 }
 
@@ -286,27 +288,31 @@ static inline notifiedFIFO_elt_t *pullTpool(notifiedFIFO_t *responseFifo, tpool_
   notifiedFIFO_elt_t *msg= pullNotifiedFIFO(responseFifo);
   if (msg == NULL)
     return NULL;
-  AssertFatal(t->traceFd, "Thread pool used while not initialized");
+  AssertFatal(t->traceFd != 0, "Thread pool used while not initialized");
   if (t->measurePerf)
     msg->returnTime=rdtsc_oai();
 
-  if (t->traceFd > 0)
-    if(write(t->traceFd, msg, sizeof(*msg)));
+  if (t->traceFd > 0) {
+    ssize_t b = write(t->traceFd, msg, sizeof(*msg));
+    AssertFatal(b == sizeof(*msg), "error in write(): %d, %s\n", errno, strerror(errno));
+  }
 
   return msg;
 }
 
 static inline notifiedFIFO_elt_t *tryPullTpool(notifiedFIFO_t *responseFifo, tpool_t *t) {
   notifiedFIFO_elt_t *msg= pollNotifiedFIFO(responseFifo);
-  AssertFatal(t->traceFd, "Thread pool used while not initialized");
+  AssertFatal(t->traceFd != 0, "Thread pool used while not initialized");
   if (msg == NULL)
     return NULL;
 
   if (t->measurePerf)
     msg->returnTime=rdtsc_oai();
 
-  if (t->traceFd)
-    if(write(t->traceFd, msg, sizeof(*msg)));
+  if (t->traceFd > 0) {
+    ssize_t b = write(t->traceFd, msg, sizeof(*msg));
+    AssertFatal(b == sizeof(*msg), "error in write(): %d, %s\n", errno, strerror(errno));
+  }
 
   return msg;
 }

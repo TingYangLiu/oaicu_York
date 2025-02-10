@@ -40,7 +40,7 @@
 #include "SCHED/sched_eNB.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
 #include "common/utils/LOG/log.h"
-#include "targets/RT/USER/lte-softmodem.h"
+#include "executables/lte-softmodem.h"
 #include <syscall.h>
 #include <common/utils/threadPool/thread-pool.h>
 
@@ -239,10 +239,6 @@ void clean_eNb_dlsch(LTE_eNB_DLSCH_t *dlsch) {
       }
     }
   }
-}
-
-void *te_thread(void *param) {
-  return(NULL);
 }
 
 static void TPencode(void * arg) {

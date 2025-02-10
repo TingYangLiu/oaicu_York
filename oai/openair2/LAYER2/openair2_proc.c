@@ -34,7 +34,7 @@
 #include "LAYER2/RLC/rlc.h"
 #include "LAYER2/MAC/mac.h"
 #include "LAYER2/MAC/mac_extern.h"
-#include "LAYER2/PDCP_v10.1.0/pdcp.h"
+#include "LAYER2/nr_pdcp/nr_pdcp_oai_api.h"
 #include "common/utils/LOG/log.h"
 #include "common/ran_context.h"
 
@@ -85,11 +85,7 @@ int dump_eNB_l2_stats(char *buffer, int length) {
     unsigned int  stat_timer_reordering_timed_out;
     unsigned int  stat_timer_poll_retransmit_timed_out;
     unsigned int  stat_timer_status_prohibit_timed_out;
-#ifdef EXMIMO
-    number_of_cards=1;
-#else
     number_of_cards=NB_eNB_INST;
-#endif
     eNB_MAC_INST *eNB;
     UE_info_t *UE_info;
 

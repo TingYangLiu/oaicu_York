@@ -41,7 +41,7 @@
 #include "s1ap_eNB_defs.h"
 #include "s1ap_eNB_management_procedures.h"
 #include "s1ap_eNB_ue_context.h"
-#include "asn1_conversions.h"
+#include "oai_asn1.h"
 #include "intertask_interface.h"
 #include "pdcp.h"
 #include "pdcp_primitives.h"
@@ -50,13 +50,12 @@
 
 #include "LTE_UERadioAccessCapabilityInformation.h"
 
-#include "gtpv1u_eNB_task.h"
+#include "openair3/ocp-gtpu/gtp_itf.h"
 #include <openair3/ocp-gtpu/gtp_itf.h>
 #include "RRC/LTE/rrc_eNB_GTPV1U.h"
 
 #include "TLVDecoder.h"
 #include "S1AP_NAS-PDU.h"
-#include "flexran_agent_common_internal.h"
 #include "executables/softmodem-common.h"
 extern RAN_CONTEXT_t RC;
 
@@ -521,7 +520,7 @@ rrc_pdcp_config_security(
     }
   }
 
-  key = PDCP_COLL_KEY_VALUE(ctxt_pP->module_id, ctxt_pP->rnti, ctxt_pP->enb_flag, DCCH, SRB_FLAG_YES);
+  key = PDCP_COLL_KEY_VALUE(ctxt_pP->module_id, ctxt_pP->rntiMaybeUEid, ctxt_pP->enb_flag, DCCH, SRB_FLAG_YES);
   h_rc = hashtable_get(pdcp_coll_p, key, (void **)&pdcp_p);
 
   if (h_rc == HASH_TABLE_OK) {
@@ -692,7 +691,7 @@ rrc_eNB_send_S1AP_NAS_FIRST_REQ(
     rrc_ue_s1ap_ids_p = malloc(sizeof(*rrc_ue_s1ap_ids_p));
     rrc_ue_s1ap_ids_p->ue_initial_id  = ue_context_pP->ue_context.ue_initial_id;
     rrc_ue_s1ap_ids_p->eNB_ue_s1ap_id = UE_INITIAL_ID_INVALID;
-    rrc_ue_s1ap_ids_p->ue_rnti        = ctxt_pP->rnti;
+    rrc_ue_s1ap_ids_p->ue_rnti = ctxt_pP->rntiMaybeUEid;
     h_rc = hashtable_insert(RC.rrc[ctxt_pP->module_id]->initial_id2_s1ap_ids,
                             (hash_key_t)ue_context_pP->ue_context.ue_initial_id,
                             rrc_ue_s1ap_ids_p);
@@ -922,10 +921,7 @@ int rrc_eNB_process_S1AP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, const char
 
       create_tunnel_req.rnti       = ue_context_p->ue_context.rnti; // warning put zero above
       //      create_tunnel_req.num_tunnels    = i;
-      ret = gtpv1u_create_s1u_tunnel(
-              instance,
-              &create_tunnel_req,
-              &create_tunnel_resp);
+      ret = gtpv1u_create_s1u_tunnel(instance, &create_tunnel_req, &create_tunnel_resp, pdcp_data_req);
 
       if ( ret != 0 ) {
         LOG_E(RRC,"rrc_eNB_process_S1AP_INITIAL_CONTEXT_SETUP_REQ : gtpv1u_create_s1u_tunnel failed,start to release UE %x\n",ue_context_p->ue_context.rnti);
@@ -959,14 +955,6 @@ int rrc_eNB_process_S1AP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, const char
       S1AP_INITIAL_CONTEXT_SETUP_REQ(msg_p).security_key);
     {
       uint8_t send_security_mode_command = true;
-#ifndef EXMIMO_IOT
-
-      if ((ue_context_p->ue_context.ciphering_algorithm == SecurityAlgorithmConfig__cipheringAlgorithm_eea0)
-          && (ue_context_p->ue_context.integrity_algorithm == INTEGRITY_ALGORITHM_NONE)) {
-        send_security_mode_command = false;
-      }
-
-#endif
       rrc_pdcp_config_security(
         &ctxt,
         ue_context_p,
@@ -1001,39 +989,6 @@ int rrc_eNB_process_S1AP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, const char
       LOG_I(RRC, "Sending rrc_eNB_send_S1AP_INITIAL_CONTEXT_SETUP_RESP, cause %ld\n", ue_context_p->ue_context.reestablishment_cause);
       //if(ue_context_p->ue_context.reestablishment_cause == ReestablishmentCause_spare1){}
       rrc_eNB_send_S1AP_INITIAL_CONTEXT_SETUP_RESP(&ctxt,ue_context_p);
-    }
-
-    
-    if (NODE_IS_CU(RC.rrc[ctxt.module_id]->node_type)) {
-      struct eNB_RRC_INST_s *rrc= RC.rrc[0];
-      MessageDef *message_p = itti_alloc_new_message (TASK_RRC_ENB, 0, F1AP_UE_CONTEXT_SETUP_REQ);
-      f1ap_ue_context_setup_t *req=&F1AP_UE_CONTEXT_SETUP_REQ (message_p);
-      req->gNB_CU_ue_id     = 0;
-      req->gNB_DU_ue_id = 0;
-      req->rnti = ue_context_p->ue_context.rnti;
-      req->mcc  = rrc->configuration.mcc[0];
-      req->mnc  = rrc->configuration.mnc[0];
-      req->mnc_digit_length = rrc->configuration.mnc_digit_length[0];
-      req->nr_cellid        = rrc->nr_cellid;
-      req->srbs_to_be_setup = malloc(sizeof(f1ap_srb_to_be_setup_t));
-      req->srbs_to_be_setup_length = 1;
-      f1ap_srb_to_be_setup_t *SRBs=req->srbs_to_be_setup;
-      SRBs[0].srb_id=CCCH;
-      req->drbs_to_be_setup_length = S1AP_INITIAL_CONTEXT_SETUP_REQ (msg_p).nb_of_e_rabs;
-      req->drbs_to_be_setup = malloc(req->drbs_to_be_setup_length * sizeof(f1ap_drb_to_be_setup_t));
-      f1ap_drb_to_be_setup_t *DRBs=req->drbs_to_be_setup;
-      for (int i = 0; i < req->drbs_to_be_setup_length ; i++) {
-	DRBs[i].drb_id=S1AP_INITIAL_CONTEXT_SETUP_REQ (msg_p).e_rab_param[i].e_rab_id;
-	DRBs[i].rlc_mode = RLC_MODE_AM;
-	DRBs[i].up_ul_tnl[0].tl_address = inet_addr(rrc->eth_params_s.my_addr);
-	DRBs[i].up_ul_tnl[0].port=rrc->eth_params_s.my_portd;
-	DRBs[i].up_ul_tnl_length = 1;
-	DRBs[i].up_dl_tnl[0].tl_address = inet_addr(rrc->eth_params_s.remote_addr);
-	DRBs[i].up_dl_tnl[0].port=rrc->eth_params_s.remote_portd;
-	DRBs[i].up_dl_tnl_length = 1;
-      }
-      LOG_I(RRC, "Send F1AP_UE_CONTEXT_SETUP_REQ with ITTI\n");
-      itti_send_msg_to_task (TASK_CU_F1, 0, message_p);
     }
   }
   
@@ -1276,10 +1231,7 @@ int rrc_eNB_process_S1AP_E_RAB_SETUP_REQ(MessageDef *msg_p, const char *msg_name
       create_tunnel_req.rnti       = ue_context_p->ue_context.rnti; // warning put zero above
       create_tunnel_req.num_tunnels    = e_rab_done;
       // NN: not sure if we should create a new tunnel: need to check teid, etc.
-      ret = gtpv1u_create_s1u_tunnel(
-              instance,
-              &create_tunnel_req,
-              &create_tunnel_resp);
+      ret = gtpv1u_create_s1u_tunnel(instance, &create_tunnel_req, &create_tunnel_resp, pdcp_data_req);
 
       if ( ret != 0 ) {
         LOG_E(RRC,"rrc_eNB_process_S1AP_E_RAB_SETUP_REQ : gtpv1u_create_s1u_tunnel failed,start to release UE %x\n",ue_context_p->ue_context.rnti);
@@ -1910,7 +1862,7 @@ int rrc_eNB_send_PATH_SWITCH_REQ(const protocol_ctxt_t *const ctxt_pP,
   rrc_ue_s1ap_ids_p = malloc(sizeof(*rrc_ue_s1ap_ids_p));
   rrc_ue_s1ap_ids_p->ue_initial_id  = ue_context_pP->ue_context.ue_initial_id;
   rrc_ue_s1ap_ids_p->eNB_ue_s1ap_id = UE_INITIAL_ID_INVALID;
-  rrc_ue_s1ap_ids_p->ue_rnti        = ctxt_pP->rnti;
+  rrc_ue_s1ap_ids_p->ue_rnti = ctxt_pP->rntiMaybeUEid;
   h_rc = hashtable_insert(RC.rrc[ctxt_pP->module_id]->initial_id2_s1ap_ids,
                           (hash_key_t)ue_context_pP->ue_context.ue_initial_id,
                           rrc_ue_s1ap_ids_p);
@@ -1950,14 +1902,8 @@ int rrc_eNB_send_PATH_SWITCH_REQ(const protocol_ctxt_t *const ctxt_pP,
   S1AP_PATH_SWITCH_REQ (msg_p).nb_of_e_rabs = e_rabs_done;
   create_tunnel_req.rnti           = ue_context_pP->ue_context.rnti;
   create_tunnel_req.num_tunnels    = e_rabs_done;
-  gtpv1u_create_s1u_tunnel(
-    ctxt_pP->instance,
-    &create_tunnel_req,
-    &create_tunnel_resp);
-  rrc_eNB_process_GTPV1U_CREATE_TUNNEL_RESP(
-    ctxt_pP,
-    &create_tunnel_resp,
-    &inde_list[0]);
+  gtpv1u_create_s1u_tunnel(ctxt_pP->instance, &create_tunnel_req, &create_tunnel_resp, pdcp_data_req);
+  rrc_eNB_process_GTPV1U_CREATE_TUNNEL_RESP(ctxt_pP, &create_tunnel_resp, &inde_list[0]);
 
   for (e_rab = 0; e_rab < e_rabs_done; e_rab++) {
     S1AP_PATH_SWITCH_REQ (msg_p).e_rabs_tobeswitched[e_rab].e_rab_id = create_tunnel_resp.eps_bearer_id[e_rab];

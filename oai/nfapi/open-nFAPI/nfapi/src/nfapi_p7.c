@@ -3162,7 +3162,7 @@ int pack_nr_srs_beamforming_report(void *pMessageBuf, void *pPackedBuf, uint32_t
     return 0;
   }
 
-  if(!pack_nr_srs_reported_symbol(nr_srs_beamforming_report->prgs, &pWritePackedMessage, end)) {
+  if (!pack_nr_srs_reported_symbol(&nr_srs_beamforming_report->prgs, &pWritePackedMessage, end)) {
     return 0;
   }
 
@@ -3199,7 +3199,7 @@ static uint8_t pack_nr_srs_indication_body(nfapi_nr_srs_indication_pdu_t *value,
     return 0;
   }
 
-  if(!pack_nr_srs_report_tlv(value->report_tlv,ppWritePackedMsg, end)) {
+  if (!pack_nr_srs_report_tlv(&value->report_tlv, ppWritePackedMsg, end)) {
     return 0;
   }
 
@@ -5920,10 +5920,6 @@ static uint8_t unpack_nr_srs_reported_symbol(nfapi_nr_srs_reported_symbol_t *prg
     return 0;
   }
 
-  if(!prgs->prg_list) {
-    prgs->prg_list = (nfapi_nr_srs_reported_symbol_prgs_t*) calloc(1, prgs->num_prgs*sizeof(nfapi_nr_srs_reported_symbol_prgs_t));
-  }
-
   for(int i = 0; i < prgs->num_prgs; i++) {
     if (!pull8(ppReadPackedMsg, &prgs->prg_list[i].rb_snr, end)) {
       return 0;
@@ -5948,11 +5944,7 @@ int unpack_nr_srs_beamforming_report(void *pMessageBuf, uint32_t messageBufLen, 
     return -1;
   }
 
-  if(!nr_srs_beamforming_report->prgs) {
-    nr_srs_beamforming_report->prgs = (nfapi_nr_srs_reported_symbol_t*) calloc(1, sizeof(nfapi_nr_srs_reported_symbol_t));
-  }
-
-  if(!unpack_nr_srs_reported_symbol(nr_srs_beamforming_report->prgs, &pReadPackedMessage, end)) {
+  if (!unpack_nr_srs_reported_symbol(&nr_srs_beamforming_report->prgs, &pReadPackedMessage, end)) {
     return -1;
   }
 
@@ -5986,7 +5978,7 @@ static uint8_t unpack_nr_srs_indication_body(nfapi_nr_srs_indication_pdu_t *valu
     return 0;
   }
 
-  if(!unpack_nr_srs_report_tlv(value->report_tlv, ppReadPackedMsg, end)) {
+  if (!unpack_nr_srs_report_tlv(&value->report_tlv, ppReadPackedMsg, end)) {
     return 0;
   }
 
@@ -7729,7 +7721,7 @@ static int check_unpack_length(nfapi_message_id_e msgId, uint32_t unpackedBufLen
   return retLen;
 }
 
-static int check_nr_unpack_length(nfapi_message_id_e msgId, uint32_t unpackedBufLen)
+static int check_nr_unpack_length(nfapi_nr_phy_msg_type_e msgId, uint32_t unpackedBufLen)
 {
 	int retLen = 0;
 
@@ -7788,21 +7780,6 @@ static int check_nr_unpack_length(nfapi_message_id_e msgId, uint32_t unpackedBuf
 		case NFAPI_NR_PHY_MSG_TYPE_UL_NODE_SYNC:
 			if (unpackedBufLen >= sizeof(nfapi_nr_ul_node_sync_t))
 				retLen = sizeof(nfapi_nr_ul_node_sync_t);
-			break;
-
-		case NFAPI_TIMING_INFO:
-			if (unpackedBufLen >= sizeof(nfapi_timing_info_t))
-				retLen = sizeof(nfapi_timing_info_t);
-			break;
-
-		case NFAPI_UE_RELEASE_REQUEST:
-			if (unpackedBufLen >= sizeof(nfapi_ue_release_request_t))
-				retLen = sizeof(nfapi_ue_release_request_t);
-			break;
-
-		case NFAPI_UE_RELEASE_RESPONSE:
-			if (unpackedBufLen >= sizeof(nfapi_ue_release_response_t))
-				retLen = sizeof(nfapi_ue_release_response_t);
 			break;
 
 		default:
@@ -8156,7 +8133,7 @@ int nfapi_nr_p7_message_unpack(void *pMessageBuf, uint32_t messageBufLen, void *
 				return -1;
 			break;
 		case NFAPI_UE_RELEASE_REQUEST:
-			if (check_nr_unpack_length(NFAPI_UE_RELEASE_REQUEST, unpackedBufLen))
+			if (check_unpack_length(NFAPI_UE_RELEASE_REQUEST, unpackedBufLen))
 				result = unpack_ue_release_request(&pReadPackedMessage,  end, pMessageHeader, config);
 			else
 				return -1;
@@ -8236,14 +8213,14 @@ int nfapi_nr_p7_message_unpack(void *pMessageBuf, uint32_t messageBufLen, void *
 			break;
 
 		case NFAPI_TIMING_INFO:
-			if (check_nr_unpack_length(NFAPI_TIMING_INFO, unpackedBufLen))
+			if (check_unpack_length(NFAPI_TIMING_INFO, unpackedBufLen))
 				result = unpack_nr_timing_info(&pReadPackedMessage, end, pMessageHeader, config);
 			else
 				return -1;
 			break;
 
 		case NFAPI_UE_RELEASE_RESPONSE:
-			if (check_nr_unpack_length(NFAPI_UE_RELEASE_RESPONSE, unpackedBufLen))
+			if (check_unpack_length(NFAPI_UE_RELEASE_RESPONSE, unpackedBufLen))
 				result = unpack_ue_release_resp(&pReadPackedMessage,  end, pMessageHeader, config);
 			else
 				return -1;

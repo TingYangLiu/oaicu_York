@@ -37,7 +37,16 @@
 #include "assertions.h"
 #include "PHY/defs_common.h"
 
-#define MAX_BWP_SIZE          275
+#define MAX_BWP_SIZE 275
+#define NR_MAX_NUM_BWP 4
+#define NR_MAX_HARQ_PROCESSES 16
+#define NR_NB_REG_PER_CCE 6
+#define NR_NB_SC_PER_RB 12
+
+typedef enum {
+  nr_FR1 = 0,
+  nr_FR2
+} nr_frequency_range_e;
 
 typedef struct nr_bandentry_s {
   int16_t band;
@@ -63,6 +72,7 @@ static inline int get_num_dmrs(uint16_t dmrs_mask ) {
   return(num_dmrs);
 }
 
+int get_first_ul_slot(int nrofDownlinkSlots, int nrofDownlinkSymbols, int nrofUplinkSymbols);
 int cce_to_reg_interleaving(const int R, int k, int n_shift, const int C, int L, const int N_regs);
 int get_SLIV(uint8_t S, uint8_t L);
 void get_coreset_rballoc(uint8_t *FreqDomainResource,int *n_rb,int *rb_offset);
@@ -81,7 +91,8 @@ int get_dmrs_port(int nl, uint16_t dmrs_ports);
 uint16_t SL_to_bitmap(int startSymbolIndex, int nrOfSymbols);
 int get_nb_periods_per_frame(uint8_t tdd_period);
 int get_supported_band_index(int scs, int band, int n_rbs);
-long rrc_get_max_nr_csrs(uint8_t max_rbs, long b_SRS);
+long rrc_get_max_nr_csrs(const int max_rbs, long b_SRS);
+void get_K1_K2(int N1, int N2, int *K1, int *K2);
 void get_samplerate_and_bw(int mu,
                            int n_rb,
                            int8_t threequarter_fs,

@@ -37,8 +37,8 @@
 #include "common/ran_context.h"
 #include "rt_profiling.h"
 
-#include "sdr/COMMON/common_lib.h"
-#include "sdr/ETHERNET/USERSPACE/LIB/ethernet_lib.h"
+#include "radio/COMMON/common_lib.h"
+#include "radio/ETHERNET/USERSPACE/LIB/ethernet_lib.h"
 
 #include "PHY/LTE_TRANSPORT/if4_tools.h"
 
@@ -46,7 +46,7 @@
 #include "PHY/defs_nr_common.h"
 #include "PHY/phy_extern.h"
 #include "PHY/NR_TRANSPORT/nr_transport_proto.h"
-#include "PHY/INIT/phy_init.h"
+#include "PHY/INIT/nr_phy_init.h"
 #include "SCHED_NR/sched_nr.h"
 
 #include "common/utils/LOG/log.h"
@@ -328,7 +328,9 @@ void fh_if5_south_in(RU_t *ru,
   if (proc->first_rx == 0) {
     if (proc->tti_rx != *tti) {
       LOG_E(PHY,"Received Timestamp doesn't correspond to the time we think it is (proc->tti_rx %d, subframe %d)\n",proc->tti_rx,*tti);
-      exit_fun("Exiting");
+      if (!oai_exit)
+        exit_fun("Exiting");
+      return;
     }
 
     if (proc->frame_rx != *frame) {
@@ -622,6 +624,7 @@ void *emulatedRF_thread(void *param) {
 void rx_rf(RU_t *ru,int *frame,int *slot) {
   RU_proc_t *proc = &ru->proc;
   NR_DL_FRAME_PARMS *fp = ru->nr_frame_parms;
+  openair0_config_t *cfg   = &ru->openair0_cfg;
   void *rxp[ru->nb_rx];
   unsigned int rxs;
   int i;
@@ -658,10 +661,7 @@ void rx_rf(RU_t *ru,int *frame,int *slot) {
   //"rx_rf: Asked for %d samples, got %d from USRP\n",fp->samples_per_subframe,rxs);
   if (rxs != samples_per_slot) LOG_E(PHY, "rx_rf: Asked for %d samples, got %d from USRP\n",samples_per_slot,rxs);
 
-  if (proc->first_rx == 1) {
-    ru->ts_offset = proc->timestamp_rx;
-    proc->timestamp_rx = 0;
-  } else {
+  if (proc->first_rx != 1) {
     samples_per_slot_prev = fp->get_samples_per_slot((*slot-1)%fp->slots_per_frame,fp);
 
     if (proc->timestamp_rx - old_ts != samples_per_slot_prev) {
@@ -671,13 +671,22 @@ void rx_rf(RU_t *ru,int *frame,int *slot) {
     }
   }
 
+  //compute system frame number (SFN) according to O-RAN-WG4-CUS.0-v02.00 (using alpha=beta=0)
+  // this assumes that the USRP has been synchronized to the GPS time
+  // OAI uses timestamps in sample time stored in int64_t, but it will fit in double precision for many years to come. 
+  double gps_sec = ((double) ts)/cfg->sample_rate; 
+  //proc->frame_rx = ((int64_t) (gps_sec/0.01)) & 1023;   
+
+  // in fact the following line is the same as long as the timestamp_rx is synchronized to GPS. 
   proc->frame_rx    = (proc->timestamp_rx / (fp->samples_per_subframe*10))&1023;
   proc->tti_rx = fp->get_slot_from_timestamp(proc->timestamp_rx,fp);
   // synchronize first reception to frame 0 subframe 0
-  LOG_D(PHY,"RU %d/%d TS %llu , frame %d, slot %d.%d / %d\n",
+  LOG_D(PHY,"RU %d/%d TS %ld, GPS %f, SR %f, frame %d, slot %d.%d / %d\n",
         ru->idx,
         0,
-        (unsigned long long int)(proc->timestamp_rx+ru->ts_offset),
+        ts, //(unsigned long long int)(proc->timestamp_rx+ru->ts_offset),
+	gps_sec,
+	cfg->sample_rate,
         proc->frame_rx,proc->tti_rx,proc->tti_tx,fp->slots_per_frame);
 
   // dump VCD output for first RU in list
@@ -726,7 +735,8 @@ void tx_rf(RU_t *ru,int frame,int slot, uint64_t timestamp) {
     T_INT(0), T_BUFFER(&ru->common.txdata[0][fp->get_samples_slot_timestamp(slot,fp,0)], fp->samples_per_subframe * 4));
   int sf_extension = 0;
   int siglen=fp->get_samples_per_slot(slot,fp);
-  int flags = 0;
+  radio_tx_burst_flag_t flags_burst = TX_BURST_INVALID;
+  radio_tx_gpio_flag_t flags_gpio = 0;
 
   if (cfg->cell_config.frame_duplex_type.value == TDD && !get_softmodem_params()->continuous_tx) {
     int slot_type = nr_slot_select(cfg,frame,slot%fp->slots_per_frame);
@@ -753,49 +763,41 @@ void tx_rf(RU_t *ru,int frame,int slot, uint64_t timestamp) {
       }
 
       //+ ru->end_of_burst_delay;
-      flags = 3; // end of burst
+      flags_burst = TX_BURST_END;
     } else if (slot_type == NR_DOWNLINK_SLOT) {
       int prevslot_type = nr_slot_select(cfg,frame,(slot+(fp->slots_per_frame-1))%fp->slots_per_frame);
       int nextslot_type = nr_slot_select(cfg,frame,(slot+1)%fp->slots_per_frame);
       if (prevslot_type == NR_UPLINK_SLOT) {
-        flags = 2; // start of burst
+        flags_burst = TX_BURST_START;
         sf_extension = ru->sf_extension;
       } else if (nextslot_type == NR_UPLINK_SLOT) {
-        flags = 3; // end of burst
+        flags_burst = TX_BURST_END;
       } else {
-        flags = 1; // middle of burst
+        flags_burst = TX_BURST_MIDDLE;
       }
     }
   } else { // FDD
-    if (proc->first_tx == 1) {
-      flags = 2; // start of burst
-    } else {
-      flags = 1; // middle of burst
-    }
+    flags_burst = proc->first_tx == 1 ? TX_BURST_START : TX_BURST_MIDDLE;
   }
 
-  if (flags) {
     if (fp->freq_range==nr_FR2) {
-      // the beam index is written in bits 8-10 of the flags
-      // bit 11 enables the gpio programming
-      // currently we switch beams every 10 slots (should = 1 TDD period in FR2) and we take the beam index of the first symbol of the first slot of this period
-      int beam=0;
+      // currently we switch beams at the beginning of a slot and we take the beam index of the first symbol of this slot
+      // we only send the beam to the gpio if the beam is different from the previous slot
 
-      if (slot%10==0) {
-        if ( ru->common.beam_id && (ru->common.beam_id[0][slot*fp->symbols_per_slot] < 8)) {
-          beam = ru->common.beam_id[0][slot*fp->symbols_per_slot] | 8;
+      if ( ru->common.beam_id) {
+        int prev_slot = (slot - 1 + fp->slots_per_frame) % fp->slots_per_frame;
+        const uint8_t *beam_ids = ru->common.beam_id[0];
+        int prev_beam = beam_ids[prev_slot * fp->symbols_per_slot];
+        int beam = beam_ids[slot * fp->symbols_per_slot];
+        if (prev_beam != beam) {
+          flags_gpio = beam | TX_GPIO_CHANGE; // enable change of gpio
+          LOG_D(HW, "slot %d, beam %d\n", slot, ru->common.beam_id[0][slot * fp->symbols_per_slot]);
         }
       }
-
-      /*
-      if (slot==0 || slot==40) beam=0|8;
-      if (slot==10 || slot==50) beam=1|8;
-      if (slot==20 || slot==60) beam=2|8;
-      if (slot==30 || slot==70) beam=3|8;
-      */
-      flags |= beam<<8;
-      LOG_D(HW,"slot %d, beam %d\n",slot,ru->common.beam_id[0][slot*fp->symbols_per_slot]);
     }
+
+    const int flags = flags_burst | flags_gpio << 4;
+
     if (proc->first_tx == 1) proc->first_tx = 0;
 
     VCD_SIGNAL_DUMPER_DUMP_VARIABLE_BY_NAME( VCD_SIGNAL_DUMPER_VARIABLES_TRX_WRITE_FLAGS, flags );
@@ -818,7 +820,7 @@ void tx_rf(RU_t *ru,int frame,int slot, uint64_t timestamp) {
 	  (long long unsigned int)(timestamp+ru->ts_offset-ru->openair0_cfg.tx_sample_advance-sf_extension),frame,slot,proc->frame_tx_unwrap,slot, flags, siglen+sf_extension, txs,10*log10((double)signal_energy(txp[0],siglen+sf_extension)));
     VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME( VCD_SIGNAL_DUMPER_FUNCTIONS_TRX_WRITE, 0 );
       //AssertFatal(txs == 0,"trx write function error %d\n", txs);
-  }
+  
 }
 
 // this is for RU with local RF unit
@@ -865,12 +867,13 @@ void fill_rf_config(RU_t *ru, char *rf_config_file) {
     cfg->tx_gain[i] = ru->att_tx;
     cfg->rx_gain[i] = ru->max_rxgain-ru->att_rx;
     cfg->configFilename = rf_config_file;
-    LOG_I(PHY, "Channel %d: setting tx_gain offset %.0f, rx_gain offset %.0f, tx_freq %.0f Hz, rx_freq %.0f Hz, tune_offset %.0f Hz\n",
+    LOG_I(PHY, "Channel %d: setting tx_gain offset %.0f, rx_gain offset %.0f, tx_freq %.0f Hz, rx_freq %.0f Hz, tune_offset %.0f Hz, sample_rate %.0f Hz\n",
           i, cfg->tx_gain[i],
           cfg->rx_gain[i],
           cfg->tx_freq[i],
           cfg->rx_freq[i],
-          cfg->tune_offset);
+          cfg->tune_offset,
+          cfg->sample_rate);
   }
 }
 
@@ -1294,12 +1297,6 @@ void *ru_thread( void *param ) {
 
   printf( "Exiting ru_thread \n");
 
-  if (ru->stop_rf != NULL) {
-    if (ru->stop_rf(ru) != 0)
-      LOG_E(HW,"Could not stop the RF device\n");
-    else LOG_I(PHY,"RU %d rf device stopped\n",ru->idx);
-  }
-
   ru_thread_status = 0;
   return &ru_thread_status;
 }
@@ -1377,6 +1374,18 @@ void kill_NR_RU_proc(int inst) {
     LOG_D(PHY, "Joining ru_stats_thread\n");
     pthread_join(ru->ru_stats_thread, NULL);
   }
+
+  // everything should be stopped now, we can safely stop the RF device
+  if (ru->stop_rf == NULL) {
+    LOG_W(PHY, "No stop_rf() for RU %d defined, cannot stop RF!\n", ru->idx);
+    return;
+  }
+  int rc = ru->stop_rf(ru);
+  if (rc != 0) {
+    LOG_W(PHY, "stop_rf() returned %d, RU %d RF device did not stop properly!\n", rc, ru->idx);
+    return;
+  }
+  LOG_I(PHY, "RU %d RF device stopped\n",ru->idx);
 }
 
 int check_capabilities(RU_t *ru,RRU_capabilities_t *cap) {
@@ -1836,6 +1845,16 @@ static void NRRCconfig_RU(void) {
 
       if (config_isparamset(RUParamList.paramarray[j], RU_SDR_ADDRS)) {
         RC.ru[j]->openair0_cfg.sdr_addrs = strdup(*(RUParamList.paramarray[j][RU_SDR_ADDRS].strptr));
+      }
+
+      if (config_isparamset(RUParamList.paramarray[j], RU_TX_SUBDEV)) {
+        RC.ru[j]->openair0_cfg.tx_subdev = strdup(*(RUParamList.paramarray[j][RU_TX_SUBDEV].strptr));
+        LOG_I(PHY, "RU USRP tx subdev == %s\n", RC.ru[j]->openair0_cfg.tx_subdev);
+      }
+
+      if (config_isparamset(RUParamList.paramarray[j], RU_RX_SUBDEV)) {
+        RC.ru[j]->openair0_cfg.rx_subdev = strdup(*(RUParamList.paramarray[j][RU_RX_SUBDEV].strptr));
+        LOG_I(PHY, "RU USRP rx subdev == %s\n", RC.ru[j]->openair0_cfg.rx_subdev);
       }
 
       if (config_isparamset(RUParamList.paramarray[j], RU_SDR_CLK_SRC)) {

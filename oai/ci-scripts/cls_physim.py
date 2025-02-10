@@ -81,15 +81,39 @@ class PhySim:
 		#once parsed move the local logfile to its folder for tidiness
 		os.system('mv '+self.__runLogFile+' '+ self.__runLogPath+'/.')
 
-		#updating the HTML with results
-		html_cell = '<pre style="background-color:white">' + info  + '</pre>'
-		html_queue=SimpleQueue()
-		html_queue.put(html_cell)
-		HTML.CreateHtmlTestRowQueue(self.runargs, 'OK', 1, html_queue)
+		HTML.CreateHtmlTestRowQueue(self.runargs, 'OK', [info])
+		return HTML
+
+	def __CheckResults_LDPCt1Test(self,HTML,CONST,testcase_id):
+		thrs_NOK = 500
+		thrs_KO = 1000
+		mySSH = sshconnection.SSHConnection()
+		mySSH.open(self.eNBIpAddr, self.eNBUserName, self.eNBPassWord)
+		#retrieve run log file and store it locally$
+		mySSH.copyin(self.eNBIpAddr, self.eNBUserName, self.eNBPassWord, self.__workSpacePath+self.__runLogFile, '.')
+		mySSH.close()
+		#parse results looking for Decoding values
+		runResultsT1=[]
+		with open(self.__runLogFile) as g:
+			for line in g:
+				if 'decoding time' in line:
+					runResultsT1.append(line)
+		info = runResultsT1[0][15:-13]
+		result = int(''.join(filter(str.isdigit, info)))/100
+		#once parsed move the local logfile to its folder for tidiness
+		os.system('mv '+self.__runLogFile+' '+ self.__runLogPath+'/.')
+		if result < thrs_NOK:
+			HTML.CreateHtmlTestRowQueue(self.runargs, 'OK', [info])
+		elif result > thrs_KO:
+			error_msg = f'Decoding time exceeds a limit of {thrs_KO} us'
+			logging.error(error_msg)
+			HTML.CreateHtmlTestRowQueue(self.runargs, 'KO', [info + '\n' + error_msg])
+			self.exitStatus = 1
+		else:
+			HTML.CreateHtmlTestRowQueue(self.runargs, 'NOK', [info])
 		return HTML
 
 	def __CheckResults_NRulsimTest(self, HTML, CONST, testcase_id):
-		html_queue = SimpleQueue()
 		#retrieve run log file and store it locally
 		mySSH = sshconnection.SSHConnection()
 		filename = self.__workSpacePath + self.__runLogFile
@@ -97,8 +121,7 @@ class PhySim:
 		if ret != 0:
 			error_msg = f'could not recover test result file {filename}'
 			logging.error(error_msg)
-			html_queue.put(f'<pre style="background-color:white">{error_msg}</pre>')
-			HTML.CreateHtmlTestRowQueue("could not recover results", 'KO', 1, html_queue)
+			HTML.CreateHtmlTestRowQueue("could not recover results", 'KO', [error_msg])
 			self.exitStatus = 1
 			return HTML
 
@@ -111,13 +134,11 @@ class PhySim:
 
 		#updating the HTML with results
 		if PUSCH_OK:
-			html_queue.put('<pre style="background-color:white">succeeded</pre>')
-			HTML.CreateHtmlTestRowQueue(self.runargs, 'OK', 1, html_queue)
+			HTML.CreateHtmlTestRowQueue(self.runargs, 'OK', 1, ["succeeded"])
 		else:
 			error_msg = 'error: no "PUSCH test OK"'
 			logging.error(error_msg)
-			html_queue.put(f'<pre style="background-color:white">{error_msg}</pre>')
-			HTML.CreateHtmlTestRowQueue(self.runargs, 'KO', 1, html_queue)
+			HTML.CreateHtmlTestRowQueue(self.runargs, 'KO', 1, [error_msg])
 			self.exitStatus = 1
 		return HTML
 
@@ -180,10 +201,10 @@ class PhySim:
 		if (self.ranAllowMerge):
 			if self.ranTargetBranch == '':
 				if (self.ranBranch != 'develop') and (self.ranBranch != 'origin/develop'):
-					mySSH.command('git merge --ff origin/develop -m "Temporary merge for CI"', '\$', 5)
+					mySSH.command('git merge --ff origin/develop -m "Temporary merge for CI"', '\$', 30)
 			else:
 				logging.info('Merging with the target branch: ' + self.ranTargetBranch)
-				mySSH.command('git merge --ff origin/' + self.ranTargetBranch + ' -m "Temporary merge for CI"', '\$', 5)
+				mySSH.command('git merge --ff origin/' + self.ranTargetBranch + ' -m "Temporary merge for CI"', '\$', 30)
 
 		#build
 		mySSH.command('source oaienv', '\$', 5)
@@ -214,6 +235,24 @@ class PhySim:
 		#return updated HTML to main
 		lHTML = cls_oai_html.HTMLManagement()
 		lHTML=self.__CheckResults_LDPCTest(htmlObj,constObj,testcase_id)
+		return lHTML
+
+	def Run_LDPCt1Test(self,htmlObj,constObj,testcase_id):
+		self.__workSpacePath = self.eNBSourceCodePath+'/cmake_targets/'
+		#create run logs folder locally
+		os.system('mkdir -p ./'+self.__runLogPath)
+		#log file is tc_<testcase_id>.log remotely
+		self.__runLogFile='physim_'+str(testcase_id)+'.log'
+		#open a session for test run
+		mySSH = sshconnection.SSHConnection()
+		mySSH.open(self.eNBIpAddr, self.eNBUserName, self.eNBPassWord)
+		mySSH.command('cd '+self.__workSpacePath,'\$',5)
+		#run and redirect the results to a log file
+		mySSH.command(f'sudo {self.__workSpacePath}ran_build/build/nr_ulsim {self.runargs} > {self.__runLogFile} 2>&1', '\$', 30)
+		mySSH.close()
+		#return updated HTML to main
+		lHTML = cls_oai_html.HTMLManagement()
+		lHTML=self.__CheckResults_LDPCt1Test(htmlObj,constObj,testcase_id)
 		return lHTML
 
 	def Run_NRulsimTest(self, htmlObj, constObj, testcase_id):

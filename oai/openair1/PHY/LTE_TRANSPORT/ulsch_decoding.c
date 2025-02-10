@@ -41,12 +41,10 @@
 #include "RRC/LTE/rrc_extern.h"
 #include "PHY_INTERFACE/phy_interface.h"
 #include "transport_proto.h"
-#include <executables/split_headers.h>
 
-extern WORKER_CONF_t get_thread_worker_conf(void);
 extern int oai_exit;
 
-
+static const int8_t wACK_RX[5][4] = {{-1, -1, -1, -1}, {-1, 1, -1, 1}, {-1, -1, 1, 1}, {-1, 1, 1, -1}, {1, 1, 1, 1}};
 
 void free_eNB_ulsch(LTE_eNB_ULSCH_t *ulsch) {
   int i,r;
@@ -249,6 +247,7 @@ void processULSegment(void * arg) {
   if(ulsch_harq->repetition_number == 1) {
     memset(ulsch_harq->pusch_rep_buffer[r],0,(sizeof(int32_t)*3*(6144+64))) ;  // reset the buffer every new repetitions
   }
+
   if(ulsch_harq->total_number_of_repetitions > 1) {
     if (ulsch_harq->rvidx==1) {
       LOG_E(PHY,"Adding HARQ data for segment: %d\n", r);
@@ -268,28 +267,21 @@ void processULSegment(void * arg) {
 				 soft_bits+96,
 				 ulsch_harq->w[r]);
   stop_meas(&eNB->ulsch_deinterleaving_stats);
-  rdata->decodeIterations = rdata->function( soft_bits+96,
-					     NULL,
-					     rdata->decoded_bytes,
-					     NULL,
-					     rdata->Kr,
-					     rdata->maxIterations,
-					     rdata->nbSegments == 1 ? CRC24_A: CRC24_B,
-					     rdata->Fbits,
-					     &eNB->ulsch_tc_init_stats,
-					     &eNB->ulsch_tc_alpha_stats,
-					     &eNB->ulsch_tc_beta_stats,
-					     &eNB->ulsch_tc_gamma_stats,
-					     &eNB->ulsch_tc_ext_stats,
-					     &eNB->ulsch_tc_intl1_stats,
-					     &eNB->ulsch_tc_intl2_stats);
-  stop_meas(&eNB->ulsch_turbo_decoding_stats);
-  
-}
-
-void *td_thread(void *param) {
-
-  return(NULL);
+  rdata->decodeIterations = rdata->function(soft_bits + 96,
+                                            NULL,
+                                            rdata->decoded_bytes,
+                                            NULL,
+                                            rdata->Kr,
+                                            rdata->maxIterations,
+                                            rdata->nbSegments == 1 ? CRC24_A : CRC24_B,
+                                            rdata->Fbits,
+                                            &eNB->ulsch_tc_init_stats,
+                                            &eNB->ulsch_tc_alpha_stats,
+                                            &eNB->ulsch_tc_beta_stats,
+                                            &eNB->ulsch_tc_gamma_stats,
+                                            &eNB->ulsch_tc_ext_stats,
+                                            &eNB->ulsch_tc_intl1_stats,
+                                            &eNB->ulsch_tc_intl2_stats);
 }
 
 int ulsch_decoding_data(PHY_VARS_eNB *eNB, L1_rxtx_proc_t *proc,
@@ -328,12 +320,6 @@ int ulsch_decoding_data(PHY_VARS_eNB *eNB, L1_rxtx_proc_t *proc,
     else
       E = ulsch_harq->Qm * ((GpmodC==0?0:1) + (Gp/ulsch_harq->C));
     
-    if ( split73 == SPLIT73_DU ) {
-      sendFs6Ul(eNB, UE_id, harq_pid, r, ulsch_harq->eUL+r_offset, E*sizeof(int16_t), r_offset);
-      r_offset += E;
-      continue;
-    }
-
     union turboReqUnion id= {.s={ulsch->rnti,proc->frame_rx,proc->subframe_rx,0,0}};
     notifiedFIFO_elt_t *req=newNotifiedFIFO_elt(sizeof(turboDecode_t),
                                                 id.p,
@@ -412,7 +398,7 @@ unsigned int  ulsch_decoding(PHY_VARS_eNB *eNB,
   unsigned int ret=0;
   //  uint8_t dummy_channel_output[(3*8*block_length)+12];
   int r,Kr;
-  uint8_t *columnset;
+  const uint8_t *columnset;
   unsigned int sumKr=0;
   unsigned int Qprime,L,G,Q_CQI,Q_RI,H,Hprime,Hpp,Cmux,Rmux_prime,O_RCC;
   unsigned int Qprime_ACK,Qprime_RI,len_ACK=0,len_RI=0;

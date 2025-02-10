@@ -36,9 +36,7 @@
 #include "UTIL/LOG/log_extern.h"
 #include "RRC/LTE/vars.h"
 #include "PHY_INTERFACE/vars.h"
-#include "UTIL/OCG/OCG.h"
 #include "LAYER2/PDCP_v10.1.0/pdcp.h"
-#include "OCG_vars.h"
 #include "rlc.h"
 #include "pdcp.h"
 
@@ -224,7 +222,6 @@ int main(int argc, char **argv)
   char * g_log_level = "trace"; // by default global log level is set to trace
 
   mac_xface = malloc(sizeof(MAC_xface));
-  Mac_rlc_xface = (MAC_RLC_XFACE*)malloc16(sizeof(MAC_RLC_XFACE));
 
   rlc_module_init (1);
   pdcp_module_init();

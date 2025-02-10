@@ -29,8 +29,6 @@
 #define __openair_SCHED_NR_DEFS_H__
 
 #include "PHY/defs_gNB.h"
-#include "PHY_INTERFACE/phy_interface.h"
-#include "SCHED/sched_eNB.h"
 #include "PHY/NR_TRANSPORT/nr_dci.h"
 #include "phy_frame_config_nr.h"
 

@@ -37,7 +37,7 @@
 #include <signal.h>
 #include "common/config/config_load_configmodule.h"
 #include "common/utils/LOG/log.h"
-#include "LAYER2/MAC/mac_vars.h"
+#include "common/utils/var_array.h"
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "PHY/types.h"
 #include "PHY/defs_eNB.h"
@@ -49,17 +49,12 @@
 #include "PHY/MODULATION/modulation_common.h"
 #include "PHY/MODULATION/modulation_eNB.h"
 #include "PHY/MODULATION/modulation_UE.h"
-#include "PHY/TOOLS/lte_phy_scope.h"
 #include "SCHED/sched_eNB.h"
-#include "SCHED/sched_common_vars.h"
 #include "SCHED_UE/sched_UE.h"
 #include "SIMULATION/TOOLS/sim.h"
-#include "UTIL/LISTS/list.h"
-#include "OCG_vars.h"
 #include "unitary_defs.h"
 #include "dummy_functions.c"
 #include "executables/thread-common.h"
-#include "executables/split_headers.h"
 #include "common/ran_context.h"
 void feptx_ofdm(RU_t *ru, int frame, int subframe);
 void feptx_prec(RU_t *ru, int frame, int subframe);
@@ -95,14 +90,6 @@ static int cmpdouble(const void *p1, const void *p2) {
 RAN_CONTEXT_t RC;
 
 int emulate_rf = 0;
-int split73=0;
-void sendFs6Ul(PHY_VARS_eNB *eNB, int UE_id, int harq_pid, int segmentID, int16_t *data, int dataLen, int r_offset) {
-  AssertFatal(false, "Must not be called in this context\n");
-}
-void sendFs6Ulharq(enum pckType type, int UEid, PHY_VARS_eNB *eNB, LTE_eNB_UCI *uci, int frame, int subframe, uint8_t *harq_ack, uint8_t tdd_mapping_mode, uint16_t tdd_multiplexing_mask, uint16_t rnti, int32_t stat) {
-  AssertFatal(false, "Must not be called in this context\n");
-}
-
 void handler(int sig) {
   void *array[10];
   size_t size;
@@ -495,7 +482,6 @@ int test_perf=0;
 int n_frames;
 int n_ch_rlz = 1;
 int rx_sample_offset = 0;
-int xforms=0;
 int dump_table=0;
 int loglvl=OAILOG_INFO;
 int mcs1=0,mcs2=0,mcs_i=0,dual_stream_UE = 0,awgn_flag=0;
@@ -567,8 +553,6 @@ int main(int argc, char **argv) {
   short *uncoded_ber_bit=NULL;
   int osf=1;
   frame_t frame_type = FDD;
-  FD_lte_phy_scope_ue *form_ue = NULL;
-  char title[255];
   int numCCE=0;
   //int dci_length_bytes=0,dci_length=0;
   //double channel_bandwidth = 5.0, sampling_rate=7.68;
@@ -644,52 +628,51 @@ int main(int argc, char **argv) {
   //  num_layers = 1;
   perfect_ce = 0;
   static paramdef_t options[] = {
-    { "awgn", "Use AWGN channel and not multipath", PARAMFLAG_BOOL, iptr:&awgn_flag, defintval:0, TYPE_INT, 0, NULL, NULL },
-    { "Abstx", "Turns on calibration mode for abstraction.", PARAMFLAG_BOOL, iptr:&abstx,  defintval:0, TYPE_INT, 0 },
-    { "bTDD", "Set the tdd configuration mode",0, iptr:&tdd_config,  defintval:3, TYPE_INT, 0 },
-    { "BnbRBs", "The LTE bandwith in RBs (100 is 20MHz)",0, iptr:&N_RB_DL,  defintval:25, TYPE_INT, 0 },
-    { "cPdcch", "Number of PDCCH symbols",0, iptr:&num_pdcch_symbols,  defintval:1, TYPE_INT, 0 },
-    { "CnidCell", "The cell id ",0, iptr:&Nid_cell,  defintval:0, TYPE_INT, 0 },
-    { "dciFlag", "Transmit the DCI and compute its error statistics", PARAMFLAG_BOOL, iptr:&dci_flag,  defintval:0, TYPE_INT, 0 },
-    { "Dtdd", "Enable tdd", PARAMFLAG_BOOL,  strptr:NULL, defintval:0, TYPE_INT, 0, NULL, NULL },
-    { "eRounds", "Number of rounds",0, iptr:NULL,  defintval:25, TYPE_INT, 0 },
-    { "EsubSampling","three quarters sub-sampling",PARAMFLAG_BOOL, iptr:&threequarter_fs, defintval:0, TYPE_INT, 0 },
-    { "f_snr_step", "step size of SNR, default value is 1.",0, dblptr:&input_snr_step,  defdblval:1, TYPE_DOUBLE, 0 },
-    { "Forgetting", "forgetting factor (0 new channel every trial, 1 channel constant)",0, dblptr:&forgetting_factor,  defdblval:0.0, TYPE_DOUBLE, 0 },
-    { "input_file", "input IQ data file",0, iptr:NULL,  defintval:0, TYPE_INT, 0 },
-    { "Input_file_trch", " Input filename for TrCH data (binary)",0, iptr:NULL,  defintval:0, TYPE_INT, 0 },
-    { "WtwoThreads", "two_thread_flag", PARAMFLAG_BOOL, iptr:&two_thread_flag,  defintval:0, TYPE_INT, 0 },
-    { "lMuMimo", "offset_mumimo_llr_drange_fix",0, u8ptr:&offset_mumimo_llr_drange_fix,  defintval:0, TYPE_UINT8, 0 },
-    { "mcs1", "The MCS for TB 1", 0, iptr:&mcs1,  defintval:0, TYPE_INT, 0 },
-    { "Mcs2", "The MCS for TB 2", 0, iptr:&mcs2,  defintval:0, TYPE_INT, 0 },
-    { "Operf", "Set the percenatge of effective rate to testbench the modem performance (typically 30 and 70, range 1-100)",0, iptr:&test_perf,  defintval:0, TYPE_INT, 0 },
-    { "tmcs_i", "MCS of interfering UE",0, iptr:NULL,  defintval:0, TYPE_INT, 0 },
-    { "nb_frame", "number of frame in a test",0, iptr:&n_frames,  defintval:1, TYPE_INT, 0 },
-    { "offsetRxSample", "Sample offset for receiver", 0, iptr:&rx_sample_offset,  defintval:0, TYPE_INT, 0 },
-    { "rballocset", "ressource block allocation (see  section 7.1.6.3 in 36.213)",0, iptr:NULL,  defintval:0, TYPE_INT, 0 },
-    { "snr", "Starting SNR, runs from SNR to SNR+%.1fdB in steps of %.1fdB. If n_frames is 1 then just SNR is simulated and MATLAB/OCTAVE output is generated", dblptr:&snr0,  defdblval:-2.0, TYPE_DOUBLE, 0 },
-    { "wsnrInterrupt", "snr int ?", 0, dblptr:&snr_int,  defdblval:30, TYPE_DOUBLE, 0 },
-    { "N_ch_rlzN0", "Determines the number of Channel Realizations in Abstraction mode. Default value is 1",0, iptr:&n_ch_rlz,  defintval:1, TYPE_INT, 0 },
-    { "prefix_extended","Enable extended prefix", PARAMFLAG_BOOL, iptr:&extended_prefix_flag,  defintval:0, TYPE_INT, 0 },
-    { "RNumRound", "Number of HARQ rounds (fixed)",0, iptr:&num_rounds,  defintval:4, TYPE_INT, 0 },
-    { "Subframe", "subframe ",0, iptr:&subframe,  defintval:7, TYPE_INT, 0 },
-    { "Trnti", "rnti",0, u16ptr:&n_rnti,  defuintval:0x1234, TYPE_UINT16, 0 },
-    { "vi_mod", "i_mod",0, iptr:NULL,  defintval:0, TYPE_INT, 0 },
-    { "Qparallel", "Enable parallel execution",0, strptr:NULL,  defstrval:NULL, TYPE_STRING,  0 },
-    { "Performance", "Display CPU perfomance of each L1 piece", PARAMFLAG_BOOL,  iptr:&print_perf,  defintval:0, TYPE_INT, 0 },
-    { "q_tx_port", "Number of TX antennas ports used in eNB",0, iptr:NULL,  defintval:0, TYPE_INT, 0 },
-    { "uEdual", "Enables the Interference Aware Receiver for TM5 (default is normal receiver)",0, iptr:NULL,  defintval:0, TYPE_INT, 0 },
-    { "xTransmission","Transmission mode (1,2,6,7 for the moment)",0, iptr:NULL,  defintval:25, TYPE_INT, 0 },
-    { "yn_tx_phy","Number of TX antennas used in eNB",0, iptr:NULL,  defintval:25, TYPE_INT, 0 },
-    { "XForms", "Display the soft scope", PARAMFLAG_BOOL, iptr:&xforms,  defintval:0, TYPE_INT, 0 },
-    { "Yperfect_ce","Perfect CE", PARAMFLAG_BOOL, iptr:&perfect_ce,  defintval:0, TYPE_INT, 0 },
-    { "Zdump", "dump table",PARAMFLAG_BOOL,  iptr:&dump_table, defintval:0, TYPE_INT, 0 },
-    { "Loglvl", "log level",0, iptr:&loglvl,  defintval:OAILOG_INFO, TYPE_INT, 0 },
-    { "zn_rx", "Number of RX antennas used in UE",0, iptr:NULL,  defintval:2, TYPE_INT, 0 },
-    { "gchannel", "[A:M] Use 3GPP 25.814 SCM-A/B/C/D('A','B','C','D') or 36-101 EPA('E'), EVA ('F'),ETU('G') models (ignores delay spread and Ricean factor), Rayghleigh8 ('H'), Rayleigh1('I'), Rayleigh1_corr('J'), Rayleigh1_anticorr ('K'),  Rice8('L'), Rice1('M')",0, strptr:NULL,  defstrval:NULL, TYPE_STRING, 0 },
-    { "verbose", "display debug text", PARAMFLAG_BOOL,  iptr:&verbose, defintval:0, TYPE_INT, 0 },
-    { "help", "display help and exit", PARAMFLAG_BOOL,  iptr:&help, defintval:0, TYPE_INT, 0 },
-    { "", "",0,  iptr:NULL, defintval:0, TYPE_INT, 0 },
+    { "awgn", "Use AWGN channel and not multipath", PARAMFLAG_BOOL, .iptr=&awgn_flag, .defintval=0, TYPE_INT, 0, NULL, NULL },
+    { "Abstx", "Turns on calibration mode for abstraction.", PARAMFLAG_BOOL, .iptr=&abstx,  .defintval=0, TYPE_INT, 0 },
+    { "bTDD", "Set the tdd configuration mode",0, .iptr=&tdd_config,  .defintval=3, TYPE_INT, 0 },
+    { "BnbRBs", "The LTE bandwith in RBs (100 is 20MHz)",0, .iptr=&N_RB_DL,  .defintval=25, TYPE_INT, 0 },
+    { "cPdcch", "Number of PDCCH symbols",0, .iptr=&num_pdcch_symbols,  .defintval=1, TYPE_INT, 0 },
+    { "CnidCell", "The cell id ",0, .iptr=&Nid_cell,  .defintval=0, TYPE_INT, 0 },
+    { "dciFlag", "Transmit the DCI and compute its error statistics", PARAMFLAG_BOOL, .iptr=&dci_flag,  .defintval=0, TYPE_INT, 0 },
+    { "Dtdd", "Enable tdd", PARAMFLAG_BOOL,  .strptr=NULL, .defintval=0, TYPE_INT, 0, NULL, NULL },
+    { "eRounds", "Number of rounds",0, .iptr=NULL,  .defintval=25, TYPE_INT, 0 },
+    { "EsubSampling","three quarters sub-sampling",PARAMFLAG_BOOL, .iptr=&threequarter_fs, .defintval=0, TYPE_INT, 0 },
+    { "f_snr_step", "step size of SNR, default value is 1.",0, .dblptr=&input_snr_step,  .defdblval=1, TYPE_DOUBLE, 0 },
+    { "Forgetting", "forgetting factor (0 new channel every trial, 1 channel constant)",0, .dblptr=&forgetting_factor,  .defdblval=0.0, TYPE_DOUBLE, 0 },
+    { "input_file", "input IQ data file",0, .iptr=NULL,  .defintval=0, TYPE_INT, 0 },
+    { "Input_file_trch", " Input filename for TrCH data (binary)",0, .iptr=NULL,  .defintval=0, TYPE_INT, 0 },
+    { "WtwoThreads", "two_thread_flag", PARAMFLAG_BOOL, .iptr=&two_thread_flag,  .defintval=0, TYPE_INT, 0 },
+    { "lMuMimo", "offset_mumimo_llr_drange_fix",0, .u8ptr=&offset_mumimo_llr_drange_fix,  .defintval=0, TYPE_UINT8, 0 },
+    { "mcs1", "The MCS for TB 1", 0, .iptr=&mcs1,  .defintval=0, TYPE_INT, 0 },
+    { "Mcs2", "The MCS for TB 2", 0, .iptr=&mcs2,  .defintval=0, TYPE_INT, 0 },
+    { "Operf", "Set the percenatge of effective rate to testbench the modem performance (typically 30 and 70, range 1-100)",0, .iptr=&test_perf,  .defintval=0, TYPE_INT, 0 },
+    { "tmcs_i", "MCS of interfering UE",0, .iptr=NULL,  .defintval=0, TYPE_INT, 0 },
+    { "nb_frame", "number of frame in a test",0, .iptr=&n_frames,  .defintval=1, TYPE_INT, 0 },
+    { "offsetRxSample", "Sample offset for receiver", 0, .iptr=&rx_sample_offset,  .defintval=0, TYPE_INT, 0 },
+    { "rballocset", "ressource block allocation (see  section 7.1.6.3 in 36.213)",0, .iptr=NULL,  .defintval=0, TYPE_INT, 0 },
+    { "snr", "Starting SNR, runs from SNR to SNR+%.1fdB in steps of %.1fdB. If n_frames is 1 then just SNR is simulated and MATLAB/OCTAVE output is generated", .dblptr=&snr0,  .defdblval=-2.0, TYPE_DOUBLE, 0 },
+    { "wsnrInterrupt", "snr int ?", 0, .dblptr=&snr_int,  .defdblval=30, TYPE_DOUBLE, 0 },
+    { "N_ch_rlzN0", "Determines the number of Channel Realizations in Abstraction mode. Default value is 1",0, .iptr=&n_ch_rlz,  .defintval=1, TYPE_INT, 0 },
+    { "prefix_extended","Enable extended prefix", PARAMFLAG_BOOL, .iptr=&extended_prefix_flag,  .defintval=0, TYPE_INT, 0 },
+    { "RNumRound", "Number of HARQ rounds (fixed)",0, .iptr=&num_rounds,  .defintval=4, TYPE_INT, 0 },
+    { "Subframe", "subframe ",0, .iptr=&subframe,  .defintval=7, TYPE_INT, 0 },
+    { "Trnti", "rnti",0, .u16ptr=&n_rnti,  .defuintval=0x1234, TYPE_UINT16, 0 },
+    { "vi_mod", "i_mod",0, .iptr=NULL,  .defintval=0, TYPE_INT, 0 },
+    { "Qparallel", "Enable parallel execution",0, .strptr=NULL,  .defstrval=NULL, TYPE_STRING,  0 },
+    { "Performance", "Display CPU perfomance of each L1 piece", PARAMFLAG_BOOL,  .iptr=&print_perf,  .defintval=0, TYPE_INT, 0 },
+    { "q_tx_port", "Number of TX antennas ports used in eNB",0, .iptr=NULL,  .defintval=0, TYPE_INT, 0 },
+    { "uEdual", "Enables the Interference Aware Receiver for TM5 (default is normal receiver)",0, .iptr=NULL,  .defintval=0, TYPE_INT, 0 },
+    { "xTransmission","Transmission mode (1,2,6,7 for the moment)",0, .iptr=NULL,  .defintval=25, TYPE_INT, 0 },
+    { "yn_tx_phy","Number of TX antennas used in eNB",0, .iptr=NULL,  .defintval=25, TYPE_INT, 0 },
+    { "Yperfect_ce","Perfect CE", PARAMFLAG_BOOL, .iptr=&perfect_ce,  .defintval=0, TYPE_INT, 0 },
+    { "Zdump", "dump table",PARAMFLAG_BOOL,  .iptr=&dump_table, .defintval=0, TYPE_INT, 0 },
+    { "Loglvl", "log level",0, .iptr=&loglvl,  .defintval=OAILOG_INFO, TYPE_INT, 0 },
+    { "zn_rx", "Number of RX antennas used in UE",0, .iptr=NULL,  .defintval=2, TYPE_INT, 0 },
+    { "gchannel", "[A:M] Use 3GPP 25.814 SCM-A/B/C/D('A','B','C','D') or 36-101 EPA('E'), EVA ('F'),ETU('G') models (ignores delay spread and Ricean factor), Rayghleigh8 ('H'), Rayleigh1('I'), Rayleigh1_corr('J'), Rayleigh1_anticorr ('K'),  Rice8('L'), Rice1('M')",0, .strptr=NULL,  .defstrval=NULL, TYPE_STRING, 0 },
+    { "verbose", "display debug text", PARAMFLAG_BOOL,  .iptr=&verbose, .defintval=0, TYPE_INT, 0 },
+    { "help", "display help and exit", PARAMFLAG_BOOL,  .iptr=&help, .defintval=0, TYPE_INT, 0 },
+    { "", "",0,  .iptr=NULL, .defintval=0, TYPE_INT, 0 },
   };
   struct option *long_options = parse_oai_options(options);
   int option_index;
@@ -954,24 +937,6 @@ int main(int argc, char **argv) {
     AssertFatal(NB_RB <= N_RB_DL,"illegal NB_RB %d\n",NB_RB);
   }
 
-  if (xforms==1) {
-    fl_initialize (&argc, argv, NULL, 0, 0);
-    form_ue = create_lte_phy_scope_ue();
-    sprintf (title, "LTE PHY SCOPE eNB");
-    fl_show_form (form_ue->lte_phy_scope_ue, FL_PLACE_HOTSPOT, FL_FULLBORDER, title);
-
-    if (!dual_stream_UE==0) {
-      if (UE) {
-        UE->use_ia_receiver = 1;
-        fl_set_button(form_ue->button_0,1);
-        fl_set_object_label(form_ue->button_0, "IA Receiver ON");
-        fl_set_object_color(form_ue->button_0, FL_GREEN, FL_GREEN);
-      } else {
-        printf("UE  is NULL\n");
-        exit(-1);
-      }
-    }
-  }
 
   if (transmission_mode==5) {
     n_users = 2;
@@ -1014,13 +979,6 @@ int main(int argc, char **argv) {
     ru->do_precoding=1;
 
   eNB->mac_enabled=1;
-
-  if(get_thread_worker_conf() == WORKER_ENABLE) {
-    extern void init_td_thread(PHY_VARS_eNB *);
-    extern void init_te_thread(PHY_VARS_eNB *);
-    init_td_thread(eNB);
-    init_te_thread(eNB);
-  }
 
   // callback functions required for phy_procedures_tx
   //  eNB_id_i = UE->n_connected_eNB;
@@ -1190,11 +1148,15 @@ int main(int argc, char **argv) {
                                    UE->frame_parms.nb_antennas_rx,
                                    channel_model,
                                    N_RB2sampling_rate(eNB->frame_parms.N_RB_DL),
+                                   0,
                                    N_RB2channel_bandwidth(eNB->frame_parms.N_RB_DL),
                                    DS_TDL,
+                                   0.0,
+                                   CORR_LEVEL_LOW,
                                    forgetting_factor,
                                    rx_sample_offset,
-                                   0, 0);
+                                   0,
+                                   0);
   reset_meas(&eNB2UE[0]->random_channel);
   reset_meas(&eNB2UE[0]->interp_time);
 
@@ -1204,11 +1166,15 @@ int main(int argc, char **argv) {
                                        UE->frame_parms.nb_antennas_rx,
                                        channel_model,
                                        N_RB2sampling_rate(eNB->frame_parms.N_RB_DL),
+                                       0,
                                        N_RB2channel_bandwidth(eNB->frame_parms.N_RB_DL),
                                        DS_TDL,
+                                       0.0,
+                                       CORR_LEVEL_LOW,
                                        forgetting_factor,
                                        rx_sample_offset,
-                                       0, 0);
+                                       0,
+                                       0);
       reset_meas(&eNB2UE[n]->random_channel);
       reset_meas(&eNB2UE[n]->interp_time);
     }
@@ -1786,13 +1752,6 @@ int main(int argc, char **argv) {
             //      UE->dlsch[UE->current_thread_id[subframe]][0][0]->harq_processes[0]->round++;
           }
 
-          if (xforms==1) {
-            phy_scope_UE(form_ue,
-                         UE,
-                         eNB_id,
-                         0,// UE_id
-                         subframe);
-          }
 
           UE->proc.proc_rxtx[UE->current_thread_id[subframe]].frame_rx++;
         }  //round

@@ -40,7 +40,6 @@
 #include <errno.h>  /* for errno */
 
 #include <asn_application.h>
-#include <asn_internal.h> /* for _ASN_DEFAULT_STACK_MAX */
 
 #include "RRC/NR/nr_rrc_defs.h"
 #include "RRC/NR/nr_rrc_config.h"
@@ -69,26 +68,11 @@ uint16_t do_SIB1_NR(rrc_gNB_carrier_data_t *carrier, gNB_RrcConfigurationReq *co
 uint8_t do_SIB23_NR(rrc_gNB_carrier_data_t *carrier,
                     gNB_RrcConfigurationReq *configuration);
 
-void do_RLC_BEARER(uint8_t Mod_id,
-                    int CC_id,
-                    struct NR_CellGroupConfig__rlc_BearerToAddModList *rlc_BearerToAddModList,
-                    rlc_bearer_config_t  *rlc_config);
-void do_MAC_CELLGROUP(uint8_t Mod_id,
-                      int CC_id,
-                      NR_MAC_CellGroupConfig_t *mac_CellGroupConfig,
-                      mac_cellgroup_t *mac_cellgroup_config);
-
-void do_PHYSICALCELLGROUP(uint8_t Mod_id,
-                          int CC_id,
-                          NR_PhysicalCellGroupConfig_t *physicalCellGroupConfig,
-                          physicalcellgroup_t *physicalcellgroup_config);
-
-
 void do_SpCellConfig(gNB_RRC_INST *rrc,
                       struct NR_SpCellConfig  *spconfig);
 
-uint8_t do_RRCReject(uint8_t Mod_id,
-                     uint8_t *const buffer);
+int do_RRCReject(uint8_t Mod_id,
+                 uint8_t *const buffer);
 
 void fill_initial_SpCellConfig(int uid,
                                NR_SpCellConfig_t *SpCellConfig,
@@ -129,14 +113,13 @@ uint8_t do_NR_SecurityModeCommand(
                     uint8_t *const buffer,
                     const uint8_t Transaction_id,
                     const uint8_t cipheringAlgorithm,
-                    NR_IntegrityProtAlgorithm_t *integrityProtAlgorithm);
+                    NR_IntegrityProtAlgorithm_t integrityProtAlgorithm);
 
 uint8_t do_NR_SA_UECapabilityEnquiry( const protocol_ctxt_t *const ctxt_pP,
                                    uint8_t               *const buffer,
                                    const uint8_t                Transaction_id);
 
-uint8_t do_NR_RRCRelease(uint8_t *buffer, size_t buffer_size,
-                         uint8_t Transaction_id);
+int do_NR_RRCRelease(uint8_t *buffer, size_t buffer_size, uint8_t Transaction_id);
 
 int16_t do_RRCReconfiguration(
     const protocol_ctxt_t        *const ctxt_pP,
@@ -190,21 +173,20 @@ uint8_t do_NR_ULInformationTransfer(uint8_t **buffer,
 
 uint8_t do_RRCReestablishmentRequest(uint8_t Mod_id, uint8_t *buffer, uint16_t c_rnti);
 
-uint8_t
-do_RRCReestablishment(
-  const protocol_ctxt_t     *const ctxt_pP,
-  rrc_gNB_ue_context_t      *const ue_context_pP,
-  int                              CC_id,
-  uint8_t                   *const buffer,
-  size_t                           buffer_size,
-  //const uint8_t                    transmission_mode,
-  const uint8_t                    Transaction_id,
-  NR_SRB_ToAddModList_t               **SRB_configList
-);
+int do_RRCReestablishment(const protocol_ctxt_t *const ctxt_pP,
+                              rrc_gNB_ue_context_t *const ue_context_pP,
+                              int CC_id,
+                              uint8_t *const buffer,
+                              size_t buffer_size,
+                              const uint8_t Transaction_id,
+                              NR_SRB_ToAddModList_t **SRB_configList,
+                              const uint8_t *masterCellGroup_from_DU,
+                              NR_ServingCellConfigCommon_t *scc,
+                              rrc_gNB_carrier_data_t *carrier);
 
-uint8_t 
-do_RRCReestablishmentComplete(
-    uint8_t *buffer, size_t buffer_size,
-    int64_t rrc_TransactionIdentifier);
+int do_RRCReestablishmentComplete(uint8_t *buffer, size_t buffer_size, int64_t rrc_TransactionIdentifier);
+
+NR_MeasConfig_t *get_defaultMeasConfig(const gNB_RrcConfigurationReq *conf);
+uint8_t do_NR_Paging(uint8_t Mod_id, uint8_t *buffer, uint32_t tmsi);
 
 #endif  /* __RRC_NR_MESSAGES_ASN1_MSG__H__ */

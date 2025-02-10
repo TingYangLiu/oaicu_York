@@ -111,13 +111,12 @@ static void nr_pdcp_entity_recv_pdu(nr_pdcp_entity_t *entity,
                    entity->rb_id, rcvd_count, entity->is_gnb ? 0 : 1);
 
   if (entity->has_integrity) {
-    unsigned char integrity[4];
+    unsigned char integrity[4] = {0};
     entity->integrity(entity->integrity_context, integrity,
                       buffer, size - integrity_size,
                       entity->rb_id, rcvd_count, entity->is_gnb ? 0 : 1);
     if (memcmp(integrity, buffer + size - integrity_size, 4) != 0) {
       LOG_E(PDCP, "discard NR PDU, integrity failed\n");
-//      return;
       entity->stats.rxpdu_dd_pkts++;
       entity->stats.rxpdu_dd_bytes += size;
 
@@ -177,14 +176,19 @@ static void nr_pdcp_entity_recv_pdu(nr_pdcp_entity_t *entity,
   }
 }
 
-static void nr_pdcp_entity_recv_sdu(nr_pdcp_entity_t *entity,
-                                    char *buffer, int size, int sdu_id)
+static int nr_pdcp_entity_process_sdu(nr_pdcp_entity_t *entity,
+                                      char *buffer,
+                                      int size,
+                                      int sdu_id,
+                                      char *pdu_buffer,
+                                      int pdu_max_size)
 {
   uint32_t count;
   int      sn;
   int      header_size;
   int      integrity_size;
-  char     buf[size + 3 + 4];
+  char    *buf = pdu_buffer;
+  DevAssert(size + 3 + 4 <= pdu_max_size);
   int      dc_bit;
   entity->stats.rxsdu_pkts++;
   entity->stats.rxsdu_bytes += size;
@@ -220,30 +224,35 @@ static void nr_pdcp_entity_recv_sdu(nr_pdcp_entity_t *entity,
 
   memcpy(buf + header_size, buffer, size);
 
-  if (entity->has_integrity)
+  if (entity->has_integrity){
+    uint8_t integrity[4] = {0};
     entity->integrity(entity->integrity_context,
-                      (unsigned char *)buf + header_size + size,
+                      integrity,
                       (unsigned char *)buf, header_size + size,
                       entity->rb_id, count, entity->is_gnb ? 1 : 0);
+
+    memcpy((unsigned char *)buf + header_size + size, integrity, 4);
+  }
 
   // set MAC-I to 0 for SRBs with integrity not active
   else if (integrity_size == 4)
     memset(buf + header_size + size, 0, 4);
 
-  if (entity->has_ciphering)
+  if (entity->has_ciphering && (entity->is_gnb || entity->security_mode_completed)){
     entity->cipher(entity->security_context,
                    (unsigned char *)buf + header_size, size + integrity_size,
                    entity->rb_id, count, entity->is_gnb ? 1 : 0);
+  } else {
+    entity->security_mode_completed = true;
+  }
 
   entity->tx_next++;
 
-  entity->deliver_pdu(entity->deliver_pdu_data, entity, buf,
-                      header_size + size + integrity_size, sdu_id);
   entity->stats.txpdu_pkts++;
   entity->stats.txpdu_bytes += header_size + size + integrity_size;
   entity->stats.txpdu_sn = sn;
 
-
+  return header_size + size + integrity_size;
 }
 
 /* may be called several times, take care to clean previous settings */
@@ -384,12 +393,15 @@ static void nr_pdcp_entity_get_stats(nr_pdcp_entity_t *entity,
 
 nr_pdcp_entity_t *new_nr_pdcp_entity(
     nr_pdcp_entity_type_t type,
-    int is_gnb, int rb_id, int pdusession_id,int has_sdap,
-    int has_sdapULheader, int has_sdapDLheader,
+    int is_gnb,
+    int rb_id,
+    int pdusession_id,
+    bool has_sdap_rx,
+    bool has_sdap_tx,
     void (*deliver_sdu)(void *deliver_sdu_data, struct nr_pdcp_entity_t *entity,
                         char *buf, int size),
     void *deliver_sdu_data,
-    void (*deliver_pdu)(void *deliver_pdu_data, struct nr_pdcp_entity_t *entity,
+    void (*deliver_pdu)(void *deliver_pdu_data, ue_id_t ue_id, int rb_id,
                         char *buf, int size, int sdu_id),
     void *deliver_pdu_data,
     int sn_size,
@@ -411,7 +423,7 @@ nr_pdcp_entity_t *new_nr_pdcp_entity(
   ret->type = type;
 
   ret->recv_pdu     = nr_pdcp_entity_recv_pdu;
-  ret->recv_sdu     = nr_pdcp_entity_recv_sdu;
+  ret->process_sdu  = nr_pdcp_entity_process_sdu;
   ret->set_security = nr_pdcp_entity_set_security;
   ret->set_time     = nr_pdcp_entity_set_time;
 
@@ -426,9 +438,8 @@ nr_pdcp_entity_t *new_nr_pdcp_entity(
 
   ret->rb_id         = rb_id;
   ret->pdusession_id = pdusession_id;
-  ret->has_sdap      = has_sdap;
-  ret->has_sdapULheader = has_sdapULheader;
-  ret->has_sdapDLheader = has_sdapDLheader;
+  ret->has_sdap_rx   = has_sdap_rx;
+  ret->has_sdap_tx   = has_sdap_tx;
   ret->sn_size       = sn_size;
   ret->t_reordering  = t_reordering;
   ret->discard_timer = discard_timer;

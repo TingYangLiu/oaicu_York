@@ -512,7 +512,7 @@ int pss_synchro_nr(PHY_VARS_NR_UE *PHY_vars_UE, int is, int rate_change)
 {
   NR_DL_FRAME_PARMS *frame_parms = &(PHY_vars_UE->frame_parms);
   int synchro_position;
-  int **rxdata = NULL;
+  c16_t **rxdata = NULL;
   int fo_flag = PHY_vars_UE->UE_fo_compensation;  // flag to enable freq offset estimation and compensation
 
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_PSS_SYNCHRO_NR, VCD_FUNCTION_IN);
@@ -524,10 +524,10 @@ int pss_synchro_nr(PHY_VARS_NR_UE *PHY_vars_UE, int is, int rate_change)
 
   if (rate_change != 1) {
 
-    rxdata = (int32_t**)malloc16(frame_parms->nb_antennas_rx*sizeof(int32_t*));
+    rxdata = (c16_t**)malloc16(frame_parms->nb_antennas_rx * sizeof(c16_t*));
 
-    for (int aa=0; aa < frame_parms->nb_antennas_rx; aa++) {
-      rxdata[aa] = (int32_t*) malloc16_clear( (frame_parms->samples_per_frame+8192)*sizeof(int32_t));
+    for (int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+      rxdata[aa] = (c16_t*)malloc16_clear((frame_parms->samples_per_frame + 8192) * sizeof(c16_t));
     }
 #ifdef SYNCHRO_DECIMAT
 
@@ -555,12 +555,8 @@ int pss_synchro_nr(PHY_VARS_NR_UE *PHY_vars_UE, int is, int rate_change)
 #endif
 
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_PSS_SEARCH_TIME_NR, VCD_FUNCTION_IN);
-  synchro_position = pss_search_time_nr(rxdata,
-                                        frame_parms,
-					fo_flag,
-                                        is,
-                                        (int *)&PHY_vars_UE->common_vars.eNb_id,
-					(int *)&PHY_vars_UE->common_vars.freq_offset);
+
+  synchro_position = pss_search_time_nr(rxdata, PHY_vars_UE, fo_flag, is);
 
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_PSS_SEARCH_TIME_NR, VCD_FUNCTION_OUT);
 
@@ -572,7 +568,7 @@ int pss_synchro_nr(PHY_VARS_NR_UE *PHY_vars_UE, int is, int rate_change)
 
   #ifndef NR_UNIT_TEST
 
-    printf("PSS execution duration %4d microseconds \n", duration_ms);
+  LOG_I(PHY,"PSS execution duration %4d microseconds \n", duration_ms);
 
   #endif
 
@@ -605,7 +601,7 @@ int pss_synchro_nr(PHY_VARS_NR_UE *PHY_vars_UE, int is, int rate_change)
 *
 * NAME :         pss_search_time_nr
 *
-* PARAMETERS :   received buffer
+* PARAMETERS :   received buffer in time domain
 *                frame parameters
 *
 * RETURN :       position of detected pss
@@ -651,19 +647,15 @@ int pss_synchro_nr(PHY_VARS_NR_UE *PHY_vars_UE, int is, int rate_change)
 *
 *********************************************************************/
 
-#define DOT_PRODUCT_SCALING_SHIFT    (17)
-int pss_search_time_nr(int **rxdata, ///rx data in time domain
-                       NR_DL_FRAME_PARMS *frame_parms,
-		       int fo_flag,
-                       int is,
-                       int *eNB_id,
-		       int *f_off)
+int pss_search_time_nr(c16_t **rxdata, PHY_VARS_NR_UE *ue, int fo_flag, int is)
 {
+  NR_DL_FRAME_PARMS *frame_parms = &ue->frame_parms;
+  int *eNB_id = (int *)&ue->common_vars.eNb_id;
+  int *f_off = (int *)&ue->common_vars.freq_offset;
   unsigned int n, ar, peak_position, pss_source;
   int64_t peak_value;
-  int64_t result;
-  int64_t avg[NUMBER_PSS_SEQUENCE]={0};
-  double ffo_est=0;
+  int64_t avg[NUMBER_PSS_SEQUENCE] = {0};
+  double ffo_est = 0;
 
   // performing the correlation on a frame length plus one symbol for the first of the two frame
   // to take into account the possibility of PSS in between the two frames 
@@ -694,9 +686,15 @@ int pss_search_time_nr(int **rxdata, ///rx data in time domain
   /* This is required by SIMD (single instruction Multiple Data) Extensions of Intel processors. */
   /* Correlation computation is based on a a dot product which is realized thank to SIMS extensions */
 
-  for (int pss_index = 0; pss_index < NUMBER_PSS_SEQUENCE; pss_index++) {
+  uint16_t pss_index_start = 0;
+  uint16_t pss_index_end = NUMBER_PSS_SEQUENCE;
+  if (ue->target_Nid_cell != -1) {
+    pss_index_start = GET_NID2(ue->target_Nid_cell);
+    pss_index_end = pss_index_start + 1;
+  }
 
-    for (n=0; n < length; n+=4) { //
+  for (int pss_index = pss_index_start; pss_index < pss_index_end; pss_index++) {
+    for (n = 0; n < length; n += 8) { //
 
       int64_t pss_corr_ue=0;
       /* calculate dot product of primary_synchro_time_nr and rxdata[ar][n]
@@ -704,11 +702,9 @@ int pss_search_time_nr(int **rxdata, ///rx data in time domain
       for (ar=0; ar<frame_parms->nb_antennas_rx; ar++) {
 
         /* perform correlation of rx data and pss sequence ie it is a dot product */
-        result  = dot_product64((short*)primary_synchro_time_nr[pss_index],
-                                (short*)&(rxdata[ar][n+is*frame_parms->samples_per_frame]),
-                                frame_parms->ofdm_symbol_size,
-                                shift);
-        pss_corr_ue += squaredMod(*(c32_t*)&result);
+        const c32_t result = dot_product((c16_t *)primary_synchro_time_nr[pss_index], &(rxdata[ar][n + is * frame_parms->samples_per_frame]), frame_parms->ofdm_symbol_size, shift);
+        const c64_t r64 = {.r = result.r, .i = result.i};
+        pss_corr_ue += squaredMod(r64);
         //((short*)pss_corr_ue[pss_index])[2*n] += ((short*) &result)[0];   /* real part */
         //((short*)pss_corr_ue[pss_index])[2*n+1] += ((short*) &result)[1]; /* imaginary part */
         //((short*)&synchro_out)[0] += ((int*) &result)[0];               /* real part */
@@ -735,27 +731,17 @@ int pss_search_time_nr(int **rxdata, ///rx data in time domain
 	  // fractional frequency offset computation according to Cross-correlation Synchronization Algorithm Using PSS
 	  // Shoujun Huang, Yongtao Su, Ying He and Shan Tang, "Joint time and frequency offset estimation in LTE downlink," 7th International Conference on Communications and Networking in China, 2012.
 
-	  int64_t result1,result2;
-	  // Computing cross-correlation at peak on half the symbol size for first half of data
-	  result1  = dot_product64((short*)primary_synchro_time_nr[pss_source], 
-				  (short*) &(rxdata[0][peak_position+is*frame_parms->samples_per_frame]), 
-				  frame_parms->ofdm_symbol_size>>1, 
-				  shift);
-	  // Computing cross-correlation at peak on half the symbol size for data shifted by half symbol size 
-	  // as it is real and complex it is necessary to shift by a value equal to symbol size to obtain such shift
-	  result2  = dot_product64((short*)primary_synchro_time_nr[pss_source]+(frame_parms->ofdm_symbol_size), 
-				  (short*) &(rxdata[0][peak_position+is*frame_parms->samples_per_frame])+frame_parms->ofdm_symbol_size, 
-				  frame_parms->ofdm_symbol_size>>1, 
-				  shift);
-
-	  int64_t re1,re2,im1,im2;
-	  re1=((int*) &result1)[0];
-	  re2=((int*) &result2)[0];
-	  im1=((int*) &result1)[1];
-	  im2=((int*) &result2)[1];
-
- 	  // estimation of fractional frequency offset: angle[(result1)'*(result2)]/pi
-	  ffo_est=atan2(re1*im2-re2*im1,re1*re2+im1*im2)/M_PI;
+    // Computing cross-correlation at peak on half the symbol size for first half of data
+    c32_t r1 = dot_product((c16_t *)primary_synchro_time_nr[pss_source], &(rxdata[0][peak_position + is * frame_parms->samples_per_frame]), frame_parms->ofdm_symbol_size >> 1, shift);
+    // Computing cross-correlation at peak on half the symbol size for data shifted by half symbol size
+    // as it is real and complex it is necessary to shift by a value equal to symbol size to obtain such shift
+    c32_t r2 = dot_product((c16_t *)primary_synchro_time_nr[pss_source] + (frame_parms->ofdm_symbol_size >> 1),
+                           &(rxdata[0][peak_position + is * frame_parms->samples_per_frame]) + (frame_parms->ofdm_symbol_size >> 1),
+                           frame_parms->ofdm_symbol_size >> 1,
+                           shift);
+    cd_t r1d = {r1.r, r1.i}, r2d = {r2.r, r2.i};
+    // estimation of fractional frequency offset: angle[(result1)'*(result2)]/pi
+    ffo_est = atan2(r1d.r * r2d.i - r2d.r * r1d.i, r1d.r * r2d.r + r1d.i * r2d.i) / M_PI;
 
 #ifdef DBG_PSS_NR
 	  printf("ffo %lf\n",ffo_est);
@@ -763,10 +749,10 @@ int pss_search_time_nr(int **rxdata, ///rx data in time domain
   }
 
   // computing absolute value of frequency offset
-  *f_off = ffo_est*frame_parms->subcarrier_spacing;  
+  *f_off = ffo_est*frame_parms->subcarrier_spacing;
 
-  for (int pss_index = 0; pss_index < NUMBER_PSS_SEQUENCE; pss_index++)
-    avg[pss_index]/=(length/4);
+  for (int pss_index = pss_index_start; pss_index < pss_index_end; pss_index++)
+    avg[pss_index] /= (length / 4);
 
   *eNB_id = pss_source;
 
@@ -791,6 +777,6 @@ int pss_search_time_nr(int **rxdata, ///rx data in time domain
 
 #endif
 
-  return(peak_position);
+  return peak_position;
 }
 

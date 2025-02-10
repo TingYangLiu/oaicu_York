@@ -97,6 +97,20 @@ extern "C" {
 #define squaredMod(a) ((a).r*(a).r + (a).i*(a).i)
 #define csum(res, i1, i2) (res).r = (i1).r + (i2).r ; (res).i = (i1).i + (i2).i
 
+  __attribute__((always_inline)) inline c16_t c16Shift(const c16_t a, const int Shift) {
+    return (c16_t) {
+        .r = (int16_t)(a.r >> Shift),
+        .i = (int16_t)(a.i >> Shift)
+    };
+  }
+
+  __attribute__((always_inline)) inline c16_t c16addShift(const c16_t a, const c16_t b, const int Shift) {
+    return (c16_t) {
+        .r = (int16_t)((a.r + b.r) >> Shift),
+        .i = (int16_t)((a.i + b.i) >> Shift)
+    };
+  }
+
   __attribute__((always_inline)) inline c16_t c16mulShift(const c16_t a, const c16_t b, const int Shift) {
     return (c16_t) {
       .r = (int16_t)((a.r * b.r - a.i * b.i) >> Shift),
@@ -139,6 +153,13 @@ extern "C" {
     };
   }
 
+  __attribute__((always_inline)) inline cd_t cdMul(const cd_t a, const cd_t b)
+  {
+    return (cd_t) {
+        .r = a.r * b.r - a.i * b.i,
+        .i = a.r * b.i + a.i * b.r
+    };
+  }
 
   // On N complex numbers
   //   y.r += (x * alpha.r) >> 14
@@ -742,16 +763,10 @@ int32_t phy_phase_compensation_top(uint32_t pilot_type,
                                    uint32_t last_pilot,
                                    int32_t ignore_prefix);
 
-int32_t dot_product(int16_t *x,
-                    int16_t *y,
-                    uint32_t N, //must be a multiple of 8
-                    uint8_t output_shift);
-
-int64_t dot_product64(int16_t *x,
-                      int16_t *y,
-                      uint32_t N, //must be a multiple of 8
-                      uint8_t output_shift);
-
+c32_t dot_product(const c16_t *x,
+                  const c16_t *y,
+                  const uint32_t N, // must be a multiple of 8
+                  const int output_shift);
 
 /** @} */
 

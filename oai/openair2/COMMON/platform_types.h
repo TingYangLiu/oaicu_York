@@ -49,7 +49,7 @@ typedef uint32_t              slot_t;
 typedef uint16_t              module_id_t;
 typedef uint8_t               slice_id_t;
 typedef uint8_t               eNB_index_t;
-typedef uint16_t              ue_id_t;
+typedef uint64_t              ue_id_t;
 typedef int16_t               smodule_id_t;
 typedef long              rb_id_t;
 typedef long              srb_id_t;
@@ -215,7 +215,7 @@ typedef struct protocol_ctxt_s {
   module_id_t module_id;     /*!< \brief  Virtualized module identifier      */
   eNB_flag_t  enb_flag;      /*!< \brief  Flag to indicate eNB (1) or UE (0) */
   instance_t  instance;      /*!< \brief  ITTI or OTG module identifier      */
-  rnti_t      rnti;
+  ue_id_t rntiMaybeUEid;
   frame_t     frame;         /*!< \brief  LTE frame number.*/
   sub_frame_t subframe;      /*!< \brief  LTE sub frame number.*/
   eNB_index_t eNB_index;     /*!< \brief  valid for UE indicating the index of connected eNB(s)      */
@@ -224,26 +224,23 @@ typedef struct protocol_ctxt_s {
 // warning time hardcoded
 #define PROTOCOL_CTXT_TIME_MILLI_SECONDS(CtXt_h) ((CtXt_h)->frame*10+(CtXt_h)->subframe)
 
-#define UE_MODULE_ID_TO_INSTANCE( mODULE_iD ) mODULE_iD + NB_eNB_INST
+#define UE_MODULE_ID_TO_INSTANCE(mODULE_iD) mODULE_iD + RC.nb_inst
 #define ENB_MODULE_ID_TO_INSTANCE( mODULE_iD ) mODULE_iD
-#define UE_INSTANCE_TO_MODULE_ID( iNSTANCE ) iNSTANCE - NB_eNB_INST
+#define UE_INSTANCE_TO_MODULE_ID(iNSTANCE) iNSTANCE - RC.nb_inst
 #define ENB_INSTANCE_TO_MODULE_ID( iNSTANCE )iNSTANCE
 
 //NR
-#define GNB_MODULE_ID_TO_INSTANCE( mODULE_iD ) mODULE_iD
-#define GNB_INSTANCE_TO_MODULE_ID( iNSTANCE )iNSTANCE
+#define GNB_MODULE_ID_TO_INSTANCE(mODULE_iD) mODULE_iD
 
 #define MODULE_ID_TO_INSTANCE(mODULE_iD, iNSTANCE, eNB_fLAG) \
-  if(eNB_fLAG == ENB_FLAG_YES) \
-    iNSTANCE = ENB_MODULE_ID_TO_INSTANCE(mODULE_iD); \
-  else \
-    iNSTANCE = UE_MODULE_ID_TO_INSTANCE(mODULE_iD)
+  do { \
+    iNSTANCE = eNB_fLAG == ENB_FLAG_YES ? ENB_MODULE_ID_TO_INSTANCE(mODULE_iD) : UE_MODULE_ID_TO_INSTANCE(mODULE_iD); \
+  } while (0)
 
 #define INSTANCE_TO_MODULE_ID(iNSTANCE, mODULE_iD, eNB_fLAG) \
-  if(eNB_fLAG == ENB_FLAG_YES) \
-    mODULE_iD = ENB_INSTANCE_TO_MODULE_ID(iNSTANCE); \
-  else \
-    mODULE_iD = UE_INSTANCE_TO_MODULE_ID(iNSTANCE)
+  do { \
+    mODULE_iD = eNB_fLAG == ENB_FLAG_YES ? ENB_INSTANCE_TO_MODULE_ID(iNSTANCE) : UE_INSTANCE_TO_MODULE_ID(iNSTANCE); \
+  } while (0)
 
 #define PROTOCOL_CTXT_COMPUTE_MODULE_ID(CtXt_h) \
   INSTANCE_TO_MODULE_ID( (CtXt_h)->instance , (CtXt_h)->module_id , (CtXt_h)->enb_flag )
@@ -252,45 +249,43 @@ typedef struct protocol_ctxt_s {
 #define PROTOCOL_CTXT_COMPUTE_INSTANCE(CtXt_h) \
   MODULE_ID_TO_INSTANCE( (CtXt_h)->module_id , (CtXt_h)->instance , (CtXt_h)->enb_flag )
 
-
 #define PROTOCOL_CTXT_SET_BY_MODULE_ID(Ctxt_Pp, mODULE_iD, eNB_fLAG, rNTI, fRAME, sUBfRAME, eNB_iNDEX) \
-  (Ctxt_Pp)->module_id = mODULE_iD; \
-  (Ctxt_Pp)->enb_flag  = eNB_fLAG; \
-  (Ctxt_Pp)->rnti      = rNTI; \
-  (Ctxt_Pp)->frame     = fRAME; \
-  (Ctxt_Pp)->subframe  = sUBfRAME; \
-  (Ctxt_Pp)->eNB_index  = eNB_iNDEX; \
-  PROTOCOL_CTXT_COMPUTE_INSTANCE(Ctxt_Pp)
+  do {                                                                                                 \
+    (Ctxt_Pp)->module_id = mODULE_iD;                                                                  \
+    (Ctxt_Pp)->enb_flag = eNB_fLAG;                                                                    \
+    (Ctxt_Pp)->rntiMaybeUEid = rNTI;                                                                   \
+    (Ctxt_Pp)->frame = fRAME;                                                                          \
+    (Ctxt_Pp)->subframe = sUBfRAME;                                                                    \
+    (Ctxt_Pp)->eNB_index = eNB_iNDEX;                                                                  \
+    (Ctxt_Pp)->brOption = false;                 /* set a default value */                             \
+    PROTOCOL_CTXT_COMPUTE_INSTANCE(Ctxt_Pp);                                                           \
+  } while (0)
 
 #define PROTOCOL_CTXT_SET_BY_INSTANCE(Ctxt_Pp, iNSTANCE, eNB_fLAG, rNTI, fRAME, sUBfRAME) \
-  (Ctxt_Pp)->instance  = iNSTANCE; \
-  (Ctxt_Pp)->enb_flag  = eNB_fLAG; \
-  (Ctxt_Pp)->rnti      = rNTI; \
-  (Ctxt_Pp)->frame     = fRAME; \
-  (Ctxt_Pp)->subframe  = sUBfRAME; \
-  PROTOCOL_CTXT_COMPUTE_MODULE_ID(Ctxt_Pp)
+  do {                                                                                    \
+    (Ctxt_Pp)->instance = iNSTANCE;                                                       \
+    (Ctxt_Pp)->enb_flag = eNB_fLAG;                                                       \
+    (Ctxt_Pp)->rntiMaybeUEid = rNTI;                                                      \
+    (Ctxt_Pp)->frame = fRAME;                                                             \
+    (Ctxt_Pp)->subframe = sUBfRAME;                                                       \
+    (Ctxt_Pp)->eNB_index = 0;                    /* set a default value */                \
+    (Ctxt_Pp)->brOption = false;                 /* set a default value */                \
+    PROTOCOL_CTXT_COMPUTE_MODULE_ID(Ctxt_Pp);                                             \
+  } while (0)
 
-#define PROTOCOL_CTXT_FMT "[FRAME %05u][%s][MOD %02d][RNTI %" PRIx16 "]"
-#define PROTOCOL_CTXT_ARGS(CTXT_Pp) \
-  (CTXT_Pp)->frame, \
-  ((CTXT_Pp)->enb_flag == ENB_FLAG_YES) ? "eNB":" UE", \
-  (CTXT_Pp)->module_id, \
-  (CTXT_Pp)->rnti
+#define PROTOCOL_CTXT_FMT "[FRAME %05u][%s][MOD %02d][RNTI %" PRIx64 "]"
+#define PROTOCOL_CTXT_ARGS(CTXT_Pp) (CTXT_Pp)->frame, ((CTXT_Pp)->enb_flag == ENB_FLAG_YES) ? "eNB" : " UE", (CTXT_Pp)->module_id, (CTXT_Pp)->rntiMaybeUEid
 
-#define PROTOCOL_NR_CTXT_ARGS(CTXT_Pp) \
-  (CTXT_Pp)->frame, \
-  ((CTXT_Pp)->enb_flag == GNB_FLAG_YES) ? "gNB":" UE", \
-  (CTXT_Pp)->module_id, \
-  (CTXT_Pp)->rnti
+#define PROTOCOL_NR_CTXT_ARGS(CTXT_Pp) (CTXT_Pp)->frame, ((CTXT_Pp)->enb_flag == GNB_FLAG_YES) ? "gNB" : " UE", (CTXT_Pp)->module_id, (CTXT_Pp)->rntiMaybeUEid
 
 #define CHECK_CTXT_ARGS(CTXT_Pp)
 
-#define exit_fun(msg) exit_function(__FILE__,__FUNCTION__,__LINE__,msg)
+#define exit_fun(msg) exit_function(__FILE__, __FUNCTION__, __LINE__, "exit_fun", OAI_EXIT_NORMAL)
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-void exit_function(const char *file, const char *function, const int line, const char *s);
+void exit_function(const char *file, const char *function, const int line, const char *s, const int assert);
 #ifdef __cplusplus
 }
 #endif

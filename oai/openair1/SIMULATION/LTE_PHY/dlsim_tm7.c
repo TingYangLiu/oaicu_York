@@ -45,14 +45,10 @@
 #include "SCHED/vars.h"
 #include "LAYER2/MAC/vars.h"
 
-#include "OCG_vars.h"
 #include "UTIL/LOG/log.h"
 #include "UTIL/LISTS/list.h"
 
 #include "unitary_defs.h"
-
-extern unsigned int dlsch_tbs25[27][25],TBStable[27][110];
-extern unsigned char offset_mumimo_llr_drange_fix;
 
 #include "PHY/TOOLS/lte_phy_scope.h"
 

@@ -21,7 +21,7 @@
 #---------------------------------------------------------------------
 #
 # Dockerfile for the Open-Air-Interface BUILD service
-#   Valid for Ubuntu 18.04
+#   Valid for RHEL8
 #
 #---------------------------------------------------------------------
 
@@ -35,4 +35,4 @@ COPY . .
 RUN /bin/sh oaienv && \ 
     cd cmake_targets && \
     mkdir -p log && \
-    ./build_oai --eNB --gNB --RU --UE --nrUE --ninja --build-lib all -w USRP --verbose-ci --noavx512 -c
+    ./build_oai --eNB --gNB --RU --UE --nrUE --ninja --build-lib "telnetsrv enbscope uescope nrscope" -w USRP --verbose-ci --noavx512 -c

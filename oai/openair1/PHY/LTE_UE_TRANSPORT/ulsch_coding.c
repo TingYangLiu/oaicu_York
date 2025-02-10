@@ -38,6 +38,7 @@
 #include "PHY/CODING/lte_interleaver_inline.h"
 #include "PHY/LTE_UE_TRANSPORT/transport_ue.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
+#include "PHY/LTE_TRANSPORT/transport_vars.h"
 
 //#define DEBUG_ULSCH_CODING
 //#define DEBUG_ULSCH_FREE 1
@@ -174,7 +175,7 @@ uint32_t ulsch_encoding(uint8_t *a,
   uint8_t Q_m=0;
   uint32_t Kr=0,Kr_bytes,r,r_offset=0;
   uint8_t y[6*14*1200],*yptr;;
-  uint8_t *columnset;
+  const uint8_t *columnset;
   uint32_t sumKr=0;
   uint32_t Qprime,L,G,Q_CQI=0,Q_RI=0,Q_ACK=0,H=0,Hprime=0,Hpp=0,Cmux=0,Rmux=0,Rmux_prime=0;
   uint32_t Qprime_ACK=0,Qprime_CQI=0,Qprime_RI=0,len_ACK=0,len_RI=0;

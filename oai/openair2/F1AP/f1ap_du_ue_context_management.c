@@ -37,7 +37,6 @@
 #include "f1ap_du_ue_context_management.h"
 
 #include "rrc_extern.h"
-#include "rrc_eNB_UE_context.h"
 #include "openair2/RRC/NR/rrc_gNB_UE_context.h"
 #include "openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
 #include <openair3/ocp-gtpu/gtp_itf.h>
@@ -182,23 +181,6 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t       instance,
           drb_p->rlc_mode = RLC_MODE_TM;
           break;
       }
-
-      if (!(RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU)) {
-        transport_layer_addr_t addr;
-        memcpy(addr.buffer, &drb_p->up_ul_tnl[0].tl_address, sizeof(drb_p->up_ul_tnl[0].tl_address));
-        addr.length=sizeof(drb_p->up_ul_tnl[0].tl_address)*8;
-        drb_p->up_dl_tnl[0].teid = newGtpuCreateTunnel(INSTANCE_DEFAULT,
-                                                       f1ap_ue_context_setup_req->rnti,
-                                                       drb_p->drb_id,
-                                                       drb_p->drb_id,
-                                                       drb_p->up_ul_tnl[0].teid,
-                                                       -1, // no qfi
-                                                       addr,
-                                                       drb_p->up_ul_tnl[0].port,
-                                                       lteDURecvCb,
-                                                       NULL);
-        drb_p->up_dl_tnl_length++;
-      }
     }
   }
 
@@ -242,11 +224,7 @@ int DU_handle_UE_CONTEXT_SETUP_REQUEST(instance_t       instance,
     LOG_W(F1AP, "can't find RRCContainer in UEContextSetupRequestIEs by id %ld \n", F1AP_ProtocolIE_ID_id_RRCContainer);
   }
 
-  if (RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU)
-    itti_send_msg_to_task(TASK_RRC_GNB, instance, msg_p);
-  else
-    // in 4G, race conditon is to fix
-    DU_send_UE_CONTEXT_SETUP_RESPONSE(instance,  f1ap_ue_context_setup_req);
+  itti_send_msg_to_task(TASK_RRC_GNB, instance, msg_p);
 
   return 0;
 }
@@ -670,146 +648,6 @@ int DU_send_UE_CONTEXT_RELEASE_REQUEST(instance_t instance,
                                getCxt(false, instance)->default_sctp_stream_id);
   return 0;
 }
-/*int DU_handle_UE_CONTEXT_RELEASE_COMMAND(instance_t       instance,
-    uint32_t         assoc_id,
-    uint32_t         stream,
-    F1AP_F1AP_PDU_t *pdu) {
-  F1AP_UEContextReleaseCommand_t *container;
-  F1AP_UEContextReleaseCommandIEs_t *ie;
-  protocol_ctxt_t ctxt;
-  DevAssert(pdu);
-  container = &pdu->choice.initiatingMessage->value.choice.UEContextReleaseCommand;
-  // GNB_CU_UE_F1AP_ID
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_CU_UE_F1AP_ID, true);
-  ctxt.rnti = f1ap_get_rnti_by_cu_id(DUtype, instance, ie->value.choice.GNB_CU_UE_F1AP_ID);
-  ctxt.instance = instance;
-  ctxt.module_id = instance;
-  ctxt.enb_flag  = 1;
-  // GNB_DU_UE_F1AP_ID
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
-  const rnti_t rnti = f1ap_get_rnti_by_du_id(DUtype, instance,
-                      ie->value.choice.GNB_DU_UE_F1AP_ID);
-  AssertFatal(ctxt.rnti == rnti,
-              "RNTI obtained through DU ID (%x) is different from CU ID (%x)\n",
-              rnti, ctxt.rnti);
-  int UE_out_of_sync = 0;
-  if (RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU) {
-    UE_iterator(RC.nrmac[instance]->UE_info.list, UE) {
-      if (UE->rnti == rnti) {
-        UE_out_of_sync = 0;
-        break;
-      }
-    }
-    if (!UE)
-      LOG_E(F1AP,"Not found rnti: %x\n", rnti);
-  } else {
-    for (int n = 0; n < MAX_MOBILES_PER_ENB; ++n) {
-      if (RC.mac[instance]->UE_info.active[n] == true
-          && rnti == UE_RNTI(instance, n)) {
-        UE_out_of_sync = RC.mac[instance]->UE_info.UE_sched_ctrl[n].ul_out_of_sync;
-        break;
-      }
-    }
-  }
-
-  // We don't need the Cause
-  // Optional RRC Container: if present, send to UE
-  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
-                             F1AP_ProtocolIE_ID_id_RRCContainer, false);
-
-  if (ie && !UE_out_of_sync) {
-    // RRC message and UE is reachable, send message
-    const sdu_size_t sdu_len = ie->value.choice.RRCContainer.size;
-    mem_block_t *pdu_p = NULL;
-    pdu_p = get_free_mem_block(sdu_len, __func__);
-    memcpy(&pdu_p->data[0], ie->value.choice.RRCContainer.buf, sdu_len);
-    rlc_op_status_t rlc_status = rlc_data_req(&ctxt
-                                 , 1
-                                 , MBMS_FLAG_NO
-                                 , 1 // SRB 1 correct?
-                                 , 0
-                                 , 0
-                                 , sdu_len
-                                 , pdu_p
-                                 ,NULL
-                                 ,NULL
-                                             );
-
-    switch (rlc_status) {
-      case RLC_OP_STATUS_OK:
-        break;
-
-      case RLC_OP_STATUS_BAD_PARAMETER:
-        LOG_W(F1AP, "Data sending request over RLC failed with 'Bad Parameter' reason!\n");
-        break;
-
-      case RLC_OP_STATUS_INTERNAL_ERROR:
-        LOG_W(F1AP, "Data sending request over RLC failed with 'Internal Error' reason!\n");
-        break;
-
-      case RLC_OP_STATUS_OUT_OF_RESSOURCES:
-        LOG_W(F1AP, "Data sending request over RLC failed with 'Out of Resources' reason!\n");
-        break;
-
-      default:
-        LOG_W(F1AP, "RLC returned an unknown status code after F1AP placed "
-              "the order to send some data (Status Code:%d)\n", rlc_status);
-        break;
-    }
-  }
-
-  if (RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU) {
-    // struct rrc_gNB_ue_context_s *ue_context_p;
-    f1ap_ue_context_release_cplt_t cplt;
-    cplt.rnti = ctxt.rnti;
-    DU_send_UE_CONTEXT_RELEASE_COMPLETE(instance, &cplt);
-    return 0;
-  } else {
-    struct rrc_eNB_ue_context_s *ue_context_p;
-    ue_context_p = rrc_eNB_get_ue_context(RC.rrc[ctxt.instance], ctxt.rnti);
-
-    if (ue_context_p && !UE_out_of_sync) {
-      // UE exists and is in sync so we start a timer before releasing the
-      //  connection
-      pthread_mutex_lock(&rrc_release_freelist);
-
-      for (uint16_t release_num = 0; release_num < NUMBER_OF_UE_MAX; release_num++) {
-        if (rrc_release_info.RRC_release_ctrl[release_num].flag == 0) {
-          if (ue_context_p->ue_context.ue_release_timer_s1 > 0)
-            rrc_release_info.RRC_release_ctrl[release_num].flag = 1;
-          else
-            rrc_release_info.RRC_release_ctrl[release_num].flag = 2;
-
-          rrc_release_info.RRC_release_ctrl[release_num].rnti = ctxt.rnti;
-          LOG_D(F1AP, "add rrc_release_info RNTI %x\n", ctxt.rnti);
-          // TODO: how to provide the correct MUI?
-          rrc_release_info.RRC_release_ctrl[release_num].rrc_eNB_mui = 0;
-          rrc_release_info.num_UEs++;
-          LOG_D(RRC,"Generate DLSCH Release send: index %d rnti %x mui %d flag %d \n",release_num,
-                ctxt.rnti, 0, rrc_release_info.RRC_release_ctrl[release_num].flag);
-          break;
-        }
-      }
-
-      pthread_mutex_unlock(&rrc_release_freelist);
-      ue_context_p->ue_context.ue_release_timer_s1 = 0;
-    } else if (ue_context_p && UE_out_of_sync) {
-      // UE exists and is out of sync, drop the connection
-      mac_eNB_rrc_ul_failure(instance, 0, 0, 0, rnti);
-    } else {
-      LOG_E(F1AP, "no ue_context for RNTI %x, acknowledging release\n", rnti);
-    }
-
-    // TODO send this once the connection has really been released
-    f1ap_ue_context_release_cplt_t cplt;
-    cplt.rnti = ctxt.rnti;
-    DU_send_UE_CONTEXT_RELEASE_COMPLETE(instance, &cplt);
-    return 0;
-  }
-}*/
-
 
 int DU_handle_UE_CONTEXT_RELEASE_COMMAND(instance_t       instance,
     uint32_t         assoc_id,
@@ -817,7 +655,6 @@ int DU_handle_UE_CONTEXT_RELEASE_COMMAND(instance_t       instance,
     F1AP_F1AP_PDU_t *pdu) {
   F1AP_UEContextReleaseCommand_t *container;
   F1AP_UEContextReleaseCommandIEs_t *ie;
-  protocol_ctxt_t ctxt;
 
   /* ITTI message to NR-RRC for the case of gNB-DU */
   MessageDef                      *msg_p; // message to NR-RRC
@@ -830,162 +667,48 @@ int DU_handle_UE_CONTEXT_RELEASE_COMMAND(instance_t       instance,
   // GNB_CU_UE_F1AP_ID
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
                              F1AP_ProtocolIE_ID_id_gNB_CU_UE_F1AP_ID, true);
-  if(RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU){
-    f1ap_ue_context_release_cmd->rnti = f1ap_get_rnti_by_cu_id(DUtype, instance, ie->value.choice.GNB_CU_UE_F1AP_ID);
-  }
-  else{
-    ctxt.rnti = f1ap_get_rnti_by_cu_id(DUtype, instance, ie->value.choice.GNB_CU_UE_F1AP_ID);
-    ctxt.instance = instance;
-    ctxt.module_id = instance;
-    ctxt.enb_flag  = 1;
-  }
+  f1ap_ue_context_release_cmd->rnti = f1ap_get_rnti_by_cu_id(DUtype, instance, ie->value.choice.GNB_CU_UE_F1AP_ID);
   // GNB_DU_UE_F1AP_ID
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
                              F1AP_ProtocolIE_ID_id_gNB_DU_UE_F1AP_ID, true);
   const rnti_t rnti = f1ap_get_rnti_by_du_id(DUtype, instance,
                       ie->value.choice.GNB_DU_UE_F1AP_ID);
-  if(RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU){
-    AssertFatal(f1ap_ue_context_release_cmd->rnti == rnti,
-            "RNTI obtained through DU ID (%x) is different from CU ID (%x)\n",
-            rnti, f1ap_ue_context_release_cmd->rnti);
-  }
-  else{
-    AssertFatal(ctxt.rnti == rnti,
-        "RNTI obtained through DU ID (%x) is different from CU ID (%x)\n",
-        rnti, ctxt.rnti);
-  }
-  int UE_out_of_sync = 0;
-
-  if(RC.rrc && RC.rrc[instance]->node_type == ngran_eNB_DU){
-    for (int n = 0; n < MAX_MOBILES_PER_ENB; ++n) {
-      if (RC.mac[instance]->UE_info.active[n] == true
-          && rnti == UE_RNTI(instance, n)) {
-        UE_out_of_sync = RC.mac[instance]->UE_info.UE_sched_ctrl[n].ul_out_of_sync;
-        break;
-      }
-    }
-  }
+  AssertFatal(f1ap_ue_context_release_cmd->rnti == rnti, "RNTI obtained through DU ID (%x) is different from CU ID (%x)\n", rnti, f1ap_ue_context_release_cmd->rnti);
 
   // We don't need the Cause
   // Optional RRC Container: if present, send to UE
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
                              F1AP_ProtocolIE_ID_id_RRCContainer, false);
 
-  if (ie && !UE_out_of_sync && RC.rrc && RC.rrc[instance]->node_type == ngran_eNB_DU) {
-    // RRC message and UE is reachable, send message
-    const sdu_size_t sdu_len = ie->value.choice.RRCContainer.size;
-    mem_block_t *pdu_p = NULL;
-    pdu_p = get_free_mem_block(sdu_len, __func__);
-    memcpy(&pdu_p->data[0], ie->value.choice.RRCContainer.buf, sdu_len);
-    rlc_op_status_t rlc_status = rlc_data_req(&ctxt
-                                 , 1
-                                 , MBMS_FLAG_NO
-                                 , 1 // SRB 1 correct?
-                                 , 0
-                                 , 0
-                                 , sdu_len
-                                 , pdu_p
-                                 ,NULL
-                                 ,NULL
-                                             );
+  f1ap_ue_context_release_cmd->rrc_container = malloc(ie->value.choice.RRCContainer.size);
+  memcpy(f1ap_ue_context_release_cmd->rrc_container, ie->value.choice.RRCContainer.buf, ie->value.choice.RRCContainer.size);
 
-    switch (rlc_status) {
-      case RLC_OP_STATUS_OK:
-        break;
+  F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
+      F1AP_ProtocolIE_ID_id_Cause, true);
+  switch (ie->value.choice.Cause.present){
+  case  F1AP_Cause_PR_radioNetwork:
+    LOG_W (F1AP, "UE context release command cause is due to radioNetwork with specific code: %ld\n",ie->value.choice.Cause.choice.radioNetwork);
+    f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_RADIO_NETWORK;
+    break;
+  case F1AP_Cause_PR_transport:
+    LOG_W (F1AP, "UE context release command cause is due to transport with specific code: %ld\n",ie->value.choice.Cause.choice.transport);
+    f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_TRANSPORT;
+    break;
+  case F1AP_Cause_PR_protocol:
+    LOG_W (F1AP, "UE context release command cause is due to protocol with specific code: %ld\n",ie->value.choice.Cause.choice.protocol);
+    f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_PROTOCOL;
+    break;
+  case F1AP_Cause_PR_misc:
+    LOG_W (F1AP, "UE context release command cause is misc with specific code: %ld \n",ie->value.choice.Cause.choice.misc);
+    f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_MISC;
+    break;
+  default:
+    LOG_W(F1AP, "Unknown cause for UE context release command\n");
+    break;
 
-      case RLC_OP_STATUS_BAD_PARAMETER:
-        LOG_W(F1AP, "Data sending request over RLC failed with 'Bad Parameter' reason!\n");
-        break;
-
-      case RLC_OP_STATUS_INTERNAL_ERROR:
-        LOG_W(F1AP, "Data sending request over RLC failed with 'Internal Error' reason!\n");
-        break;
-
-      case RLC_OP_STATUS_OUT_OF_RESSOURCES:
-        LOG_W(F1AP, "Data sending request over RLC failed with 'Out of Resources' reason!\n");
-        break;
-
-      default:
-        LOG_W(F1AP, "RLC returned an unknown status code after F1AP placed "
-              "the order to send some data (Status Code:%d)\n", rlc_status);
-        break;
-    }
   }
-  else if(ie && RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU) {
-    f1ap_ue_context_release_cmd->rrc_container = malloc(ie->value.choice.RRCContainer.size);
-    memcpy(f1ap_ue_context_release_cmd->rrc_container,
-        ie->value.choice.RRCContainer.buf, ie->value.choice.RRCContainer.size);
-  }
-
-  if (RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU) {
-    F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextReleaseCommandIEs_t, ie, container,
-        F1AP_ProtocolIE_ID_id_Cause, true);
-    switch (ie->value.choice.Cause.present){
-    case  F1AP_Cause_PR_radioNetwork:
-      LOG_W (F1AP, "UE context release command cause is due to radioNetwork with specific code: %ld\n",ie->value.choice.Cause.choice.radioNetwork);
-      f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_RADIO_NETWORK;
-      break;
-    case F1AP_Cause_PR_transport:
-      LOG_W (F1AP, "UE context release command cause is due to transport with specific code: %ld\n",ie->value.choice.Cause.choice.transport);
-      f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_TRANSPORT;
-      break;
-    case F1AP_Cause_PR_protocol:
-      LOG_W (F1AP, "UE context release command cause is due to protocol with specific code: %ld\n",ie->value.choice.Cause.choice.protocol);
-      f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_PROTOCOL;
-      break;
-    case F1AP_Cause_PR_misc:
-      LOG_W (F1AP, "UE context release command cause is misc with specific code: %ld \n",ie->value.choice.Cause.choice.misc);
-      f1ap_ue_context_release_cmd->cause = F1AP_CAUSE_MISC;
-      break;
-    default:
-      LOG_W(F1AP, "Unknown cause for UE context release command\n");
-      break;
-
-    }
-    itti_send_msg_to_task(TASK_RRC_GNB, instance, msg_p);
-    return 0;
-  } else {
-    struct rrc_eNB_ue_context_s *ue_context_p;
-    ue_context_p = rrc_eNB_get_ue_context(RC.rrc[ctxt.instance], ctxt.rnti);
-
-    if (ue_context_p && !UE_out_of_sync) {
-      // UE exists and is in sync so we start a timer before releasing the
-      //  connection
-      pthread_mutex_lock(&rrc_release_freelist);
-
-      for (uint16_t release_num = 0; release_num < NUMBER_OF_UE_MAX; release_num++) {
-        if (rrc_release_info.RRC_release_ctrl[release_num].flag == 0) {
-          if (ue_context_p->ue_context.ue_release_timer_s1 > 0)
-            rrc_release_info.RRC_release_ctrl[release_num].flag = 1;
-          else
-            rrc_release_info.RRC_release_ctrl[release_num].flag = 2;
-
-          rrc_release_info.RRC_release_ctrl[release_num].rnti = ctxt.rnti;
-          LOG_D(F1AP, "add rrc_release_info RNTI %x\n", ctxt.rnti);
-          // TODO: how to provide the correct MUI?
-          rrc_release_info.RRC_release_ctrl[release_num].rrc_eNB_mui = 0;
-          rrc_release_info.num_UEs++;
-          LOG_D(RRC,"Generate DLSCH Release send: index %d rnti %x mui %d flag %d \n",release_num,
-                ctxt.rnti, 0, rrc_release_info.RRC_release_ctrl[release_num].flag);
-          break;
-        }
-      }
-
-      pthread_mutex_unlock(&rrc_release_freelist);
-      ue_context_p->ue_context.ue_release_timer_s1 = 0;
-    } else if (ue_context_p && UE_out_of_sync) {
-      // UE exists and is out of sync, drop the connection
-      mac_eNB_rrc_ul_failure(instance, 0, 0, 0, rnti);
-    } else {
-      LOG_E(F1AP, "no ue_context for RNTI %x, acknowledging release\n", rnti);
-    }
-
-    // TODO send this once the connection has really been released
-    f1ap_ue_context_release_cplt_t cplt;
-    cplt.rnti = ctxt.rnti;
-    DU_send_UE_CONTEXT_RELEASE_COMPLETE(instance, &cplt);
-    return 0;
-  }
+  itti_send_msg_to_task(TASK_RRC_GNB, instance, msg_p);
+  return 0;
 }
 
 int DU_send_UE_CONTEXT_RELEASE_COMPLETE(instance_t instance,
@@ -1056,11 +779,11 @@ int DU_send_UE_CONTEXT_RELEASE_COMPLETE(instance_t instance,
   //        criticalityDiagnostics_ie_item->iECriticality = F1AP_Criticality_reject;
   //        criticalityDiagnostics_ie_item->iE_ID         = 0L;
   //        criticalityDiagnostics_ie_item->typeOfError   = F1AP_TypeOfError_not_understood;
-  //        ASN_SEQUENCE_ADD(&ie->value.choice.CriticalityDiagnostics.iEsCriticalityDiagnostics->list,
+  //        asn1cSeqAdd(&ie->value.choice.CriticalityDiagnostics.iEsCriticalityDiagnostics->list,
   //                    criticalityDiagnostics_ie_item);
   //    }
   //  }
-  //  ASN_SEQUENCE_ADD(&out->protocolIEs.list, ie);
+  //  asn1cSeqAdd(&out->protocolIEs.list, ie);
   //}
   /* encode */
   uint8_t  *buffer;
@@ -1078,6 +801,17 @@ int DU_send_UE_CONTEXT_RELEASE_COMPLETE(instance_t instance,
   f1ap_remove_ue(DUtype, instance, cplt->rnti);
   return 0;
 }
+
+static instance_t du_create_gtpu_instance_to_cu(char *CUaddr, uint16_t CUport, char *DUaddr, uint16_t DUport)
+{
+  openAddr_t tmp = {0};
+  strncpy(tmp.originHost, DUaddr, sizeof(tmp.originHost)-1);
+  strncpy(tmp.destinationHost, CUaddr, sizeof(tmp.destinationHost)-1);
+  sprintf(tmp.originService, "%d", DUport);
+  sprintf(tmp.destinationService, "%d", CUport);
+  return gtpv1Init(tmp);
+}
+
 int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t       instance,
     uint32_t         assoc_id,
     uint32_t         stream,
@@ -1160,6 +894,28 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t       instance,
        // 3GPP assumes GTP-U is on port 2152, but OAI is configurable
       drb_p->up_ul_tnl[0].port=getCxt(false,instance)->setupReq.CUport;
 
+      extern instance_t DUuniqInstance;
+      if (DUuniqInstance == 0) {
+        char gtp_tunnel_ip_address[32];
+        snprintf(gtp_tunnel_ip_address,
+                 sizeof(gtp_tunnel_ip_address),
+                 "%d.%d.%d.%d",
+                 drb_p->up_ul_tnl[0].tl_address & 0xff,
+                 (drb_p->up_ul_tnl[0].tl_address >> 8) & 0xff,
+                 (drb_p->up_ul_tnl[0].tl_address >> 16) & 0xff,
+                 (drb_p->up_ul_tnl[0].tl_address >> 24) & 0xff);
+        getCxt(DUtype, instance)->gtpInst=du_create_gtpu_instance_to_cu(
+                                            gtp_tunnel_ip_address,
+                                            getCxt(false,instance)->setupReq.CUport,
+                                            getCxt(false,instance)->setupReq.DU_f1_ip_address.ipv4_address,
+                                            getCxt(false,instance)->setupReq.DUport);
+        AssertFatal(getCxt(DUtype, instance)->gtpInst>0,"Failed to create CU F1-U UDP listener");
+        // Fixme: fully inconsistent instances management
+        // dirty global var is a bad fix
+        extern instance_t legacyInstanceMapping;
+        legacyInstanceMapping = DUuniqInstance = getCxt(DUtype, instance)->gtpInst;
+      }
+
       switch (drbs_tobesetupmod_item_p->rLCMode) {
       case F1AP_RLCMode_rlc_am:
         drb_p->rlc_mode = RLC_MODE_AM;
@@ -1168,22 +924,6 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t       instance,
       default:
         drb_p->rlc_mode = RLC_MODE_TM;
         break;
-      }
-      if (!(RC.nrrrc && RC.nrrrc[instance]->node_type == ngran_gNB_DU)) {
-        transport_layer_addr_t addr;
-          memcpy(addr.buffer, &drb_p->up_ul_tnl[0].tl_address, sizeof(drb_p->up_ul_tnl[0].tl_address));
-          addr.length=sizeof(drb_p->up_ul_tnl[0].tl_address)*8;
-          drb_p->up_dl_tnl[0].teid = newGtpuCreateTunnel(INSTANCE_DEFAULT,
-                                                         f1ap_ue_context_modification_req->rnti,
-                                                         drb_p->drb_id,
-                                                         drb_p->drb_id,
-                                                         drb_p->up_ul_tnl[0].teid,
-                                                         -1, // no qfi
-                                                         addr,
-                                                         drb_p->up_ul_tnl[0].port,
-                                                         lteDURecvCb,
-                                                         NULL);
-          drb_p->up_dl_tnl_length++;
       }
     }
   }
@@ -1217,7 +957,7 @@ int DU_handle_UE_CONTEXT_MODIFICATION_REQUEST(instance_t       instance,
           ieRRC->value.choice.RRCContainer.buf, ieRRC->value.choice.RRCContainer.size);
       protocol_ctxt_t ctxt;
       // decode RRC Container and act on the message type
-      ctxt.rnti = f1ap_ue_context_modification_req->rnti;
+      ctxt.rntiMaybeUEid = f1ap_ue_context_modification_req->rnti;
       ctxt.instance = instance;
       ctxt.module_id  = instance;
       ctxt.enb_flag  = 1;
@@ -1399,7 +1139,7 @@ int DU_send_UE_CONTEXT_MODIFICATION_RESPONSE(instance_t instance, f1ap_ue_contex
         &srbs_failedToBeSetupMod_item_ies->value.choice.SRBs_FailedToBeSetupMod_Item;
       /* - sRBID */
       srbs_failedToBeSetupMod_item->sRBID = resp->srbs_failed_to_be_setup[i].rb_id;
-      asn1cCalloc(srbs_failedToBeSetupMod_item->cause, tmp)
+      asn1cCalloc(srbs_failedToBeSetupMod_item->cause, tmp);
       tmp->present = F1AP_Cause_PR_radioNetwork;
       tmp->choice.radioNetwork = F1AP_CauseRadioNetwork_unknown_or_already_allocated_gnb_du_ue_f1ap_id;
     }
@@ -1506,7 +1246,7 @@ int DU_send_UE_CONTEXT_MODIFICATION_RESPONSE(instance_t instance, f1ap_ue_contex
     /* procedureCriticality */
     if (0) {
       ie11->value.choice.CriticalityDiagnostics.procedureCriticality = (F1AP_Criticality_t *)calloc(1, sizeof(F1AP_Criticality_t));
-      ie11->value.choice.CriticalityDiagnostics.procedureCriticality = F1AP_Criticality_reject;
+      *ie11->value.choice.CriticalityDiagnostics.procedureCriticality = F1AP_Criticality_reject;
     }
 
     /* optional */

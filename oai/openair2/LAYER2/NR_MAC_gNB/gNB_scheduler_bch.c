@@ -38,12 +38,9 @@
 #include "common/utils/LOG/log.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
 #include "UTIL/OPT/opt.h"
-#include "OCG.h"
 #include "RRC/NR/nr_rrc_extern.h"
 #include "common/utils/nr/nr_common.h"
 
-
-#include "pdcp.h"
 
 #define ENABLE_MAC_PAYLOAD_DEBUG
 #define DEBUG_eNB_SCHEDULER 1
@@ -92,10 +89,10 @@ void schedule_ssb(frame_t frame, sub_frame_t slot,
 
 }
 
-void schedule_nr_mib(module_id_t module_idP, frame_t frameP, sub_frame_t slotP) {
+void schedule_nr_mib(module_id_t module_idP, frame_t frameP, sub_frame_t slotP, nfapi_nr_dl_tti_request_t *DL_req)
+{
   gNB_MAC_INST *gNB = RC.nrmac[module_idP];
   NR_COMMON_channels_t *cc;
-  nfapi_nr_dl_tti_request_t      *dl_tti_request;
   nfapi_nr_dl_tti_request_body_t *dl_req;
   NR_MIB_t *mib = RC.nrrrc[module_idP]->carrier.mib.message.choice.mib;
   uint8_t num_tdd_period,num_ssb;
@@ -106,8 +103,7 @@ void schedule_nr_mib(module_id_t module_idP, frame_t frameP, sub_frame_t slotP) 
     cc = &gNB->common_channels[CC_id];
     NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
     const int slots_per_frame = nr_slots_per_frame[*scc->ssbSubcarrierSpacing];
-    dl_tti_request = &gNB->DL_req[CC_id];
-    dl_req = &dl_tti_request->dl_tti_request_body;
+    dl_req = &DL_req->dl_tti_request_body;
 
     // get MIB every 8 frames
     if(((slotP == 0) && (frameP & 7) == 0) ||
@@ -257,7 +253,6 @@ void schedule_nr_mib(module_id_t module_idP, frame_t frameP, sub_frame_t slotP) 
     }
   }
 }
-
 
 void schedule_nr_SI(module_id_t module_idP, frame_t frameP, sub_frame_t subframeP) {
 //----------------------------------------  
@@ -496,12 +491,13 @@ void nr_fill_nfapi_dl_sib1_pdu(int Mod_idP,
   fill_dci_pdu_rel15(scc,
                      NULL,
                      NULL,
+                     NULL,
                      &pdcch_pdu_rel15->dci_pdu[pdcch_pdu_rel15->numDlDci - 1],
                      &dci_payload,
                      dci_format,
                      rnti_type,
-                     pdsch_pdu_rel15->BWPSize,
                      0,
+                     gNB_mac->sched_ctrlCommon->search_space,
                      gNB_mac->sched_ctrlCommon->coreset,
                      gNB_mac->cset0_bwp_size);
 
@@ -522,8 +518,12 @@ void nr_fill_nfapi_dl_sib1_pdu(int Mod_idP,
 
 }
 
-void schedule_nr_sib1(module_id_t module_idP, frame_t frameP, sub_frame_t slotP) {
-
+void schedule_nr_sib1(module_id_t module_idP,
+                      frame_t frameP,
+                      sub_frame_t slotP,
+                      nfapi_nr_dl_tti_request_t *DL_req,
+                      nfapi_nr_tx_data_request_t *TX_req)
+{
   // TODO: Get these values from RRC
   const int CC_id = 0;
   uint8_t candidate_idx = 0;
@@ -568,23 +568,11 @@ void schedule_nr_sib1(module_id_t module_idP, frame_t frameP, sub_frame_t slotP)
       for (int k=0;k<sib1_sdu_length;k++)
         LOG_D(NR_MAC,"byte %d : %x\n",k,((uint8_t*)sib1_payload)[k]);
 
-      int startSymbolIndex = 0;
-      int nrOfSymbols = 0;
-      bool is_typeA;
+      default_table_type_t table_type = get_default_table_type(type0_PDCCH_CSS_config->type0_pdcch_ss_mux_pattern);
+      // assuming normal CP
+      NR_tda_info_t tda_info = get_info_from_tda_tables(table_type, time_domain_allocation, gNB_mac->common_channels->ServingCellConfigCommon->dmrs_TypeA_Position, true);
 
-      get_info_from_tda_tables(type0_PDCCH_CSS_config->type0_pdcch_ss_mux_pattern,
-                               time_domain_allocation,
-                               gNB_mac->common_channels->ServingCellConfigCommon->dmrs_TypeA_Position,
-                               1, &is_typeA,
-                               &startSymbolIndex, &nrOfSymbols);
-
-      AssertFatal((startSymbolIndex+nrOfSymbols)<14,"SIB1 TDA %d would cause overlap with CSI-RS. Please select a different SIB1 TDA.\n",time_domain_allocation);
-
-      NR_tda_info_t tda_info = {
-        .mapping_type = is_typeA ? typeA : typeB,
-        .startSymbolIndex = startSymbolIndex,
-        .nrOfSymbols = nrOfSymbols
-      };
+      AssertFatal((tda_info.startSymbolIndex + tda_info.nrOfSymbols) < 14, "SIB1 TDA %d would cause overlap with CSI-RS. Please select a different SIB1 TDA.\n", time_domain_allocation);
 
       NR_pdsch_dmrs_t dmrs_parms = get_dl_dmrs_params(scc,
                                                       NULL,
@@ -600,12 +588,12 @@ void schedule_nr_sib1(module_id_t module_idP, frame_t frameP, sub_frame_t slotP)
                                            candidate_idx,
                                            sib1_sdu_length);
 
-      nfapi_nr_dl_tti_request_body_t *dl_req = &gNB_mac->DL_req[CC_id].dl_tti_request_body;
+      nfapi_nr_dl_tti_request_body_t *dl_req = &DL_req->dl_tti_request_body;
       int pdu_index = gNB_mac->pdu_index[0]++;
-      nr_fill_nfapi_dl_sib1_pdu(module_idP, dl_req, pdu_index, type0_PDCCH_CSS_config, TBS, startSymbolIndex, nrOfSymbols);
+      nr_fill_nfapi_dl_sib1_pdu(module_idP, dl_req, pdu_index, type0_PDCCH_CSS_config, TBS, tda_info.startSymbolIndex, tda_info.nrOfSymbols);
 
-      const int ntx_req = gNB_mac->TX_req[CC_id].Number_of_PDUs;
-      nfapi_nr_pdu_t *tx_req = &gNB_mac->TX_req[CC_id].pdu_list[ntx_req];
+      const int ntx_req = TX_req->Number_of_PDUs;
+      nfapi_nr_pdu_t *tx_req = &TX_req->pdu_list[ntx_req];
 
       // Data to be transmitted
       memcpy(tx_req->TLVs[0].value.direct, sib1_payload, TBS);
@@ -614,9 +602,9 @@ void schedule_nr_sib1(module_id_t module_idP, frame_t frameP, sub_frame_t slotP)
       tx_req->PDU_index  = pdu_index;
       tx_req->num_TLV = 1;
       tx_req->TLVs[0].length = TBS + 2;
-      gNB_mac->TX_req[CC_id].Number_of_PDUs++;
-      gNB_mac->TX_req[CC_id].SFN = frameP;
-      gNB_mac->TX_req[CC_id].Slot = slotP;
+      TX_req->Number_of_PDUs++;
+      TX_req->SFN = frameP;
+      TX_req->Slot = slotP;
 
       type0_PDCCH_CSS_config->active = false;
     }

@@ -318,13 +318,13 @@ int do_pss_sss_extract_nr(PHY_VARS_NR_UE *ue,
                           int32_t pss_ext[NB_ANTENNAS_RX][LENGTH_PSS_NR],
                           int32_t sss_ext[NB_ANTENNAS_RX][LENGTH_SSS_NR],
                           uint8_t doPss, uint8_t doSss,
-                          uint8_t subframe) // add flag to indicate extracting only PSS, only SSS, or both
+                          uint8_t subframe,
+                          c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP]) // add flag to indicate extracting only PSS, only SSS, or both
 {
   uint8_t aarx;
   int32_t *pss_rxF,*pss_rxF_ext;
   int32_t *sss_rxF,*sss_rxF_ext;
   uint8_t pss_symbol, sss_symbol;
-  int32_t **rxdataF;
   NR_DL_FRAME_PARMS *frame_parms = &ue->frame_parms;
 
   for (aarx=0; aarx<frame_parms->nb_antennas_rx; aarx++) {
@@ -332,12 +332,10 @@ int do_pss_sss_extract_nr(PHY_VARS_NR_UE *ue,
     pss_symbol = 0;
     sss_symbol = SSS_SYMBOL_NB-PSS_SYMBOL_NB;
 
-    rxdataF  =  ue->common_vars.rxdataF;
-
     unsigned int ofdm_symbol_size = frame_parms->ofdm_symbol_size;
 
-    pss_rxF  =  &rxdataF[aarx][pss_symbol*ofdm_symbol_size];
-    sss_rxF  =  &rxdataF[aarx][sss_symbol*ofdm_symbol_size];
+    pss_rxF  =  (int32_t *)&rxdataF[aarx][pss_symbol*ofdm_symbol_size];
+    sss_rxF  =  (int32_t *)&rxdataF[aarx][sss_symbol*ofdm_symbol_size];
 
     pss_rxF_ext = &pss_ext[aarx][0];
     sss_rxF_ext = &sss_ext[aarx][0];
@@ -402,9 +400,10 @@ int pss_sss_extract_nr(PHY_VARS_NR_UE *phy_vars_ue,
                        UE_nr_rxtx_proc_t *proc,
                        int32_t pss_ext[NB_ANTENNAS_RX][LENGTH_PSS_NR],
                        int32_t sss_ext[NB_ANTENNAS_RX][LENGTH_SSS_NR],
-                       uint8_t subframe)
+                       uint8_t subframe,
+                       c16_t rxdataF[][phy_vars_ue->frame_parms.samples_per_slot_wCP])
 {
-  return do_pss_sss_extract_nr(phy_vars_ue, proc, pss_ext, sss_ext, 1 /* doPss */, 1 /* doSss */, subframe);
+  return do_pss_sss_extract_nr(phy_vars_ue, proc, pss_ext, sss_ext, 1 /* doPss */, 1 /* doSss */, subframe, rxdataF);
 }
 
 /*******************************************************************
@@ -420,7 +419,7 @@ int pss_sss_extract_nr(PHY_VARS_NR_UE *phy_vars_ue,
 *
 *********************************************************************/
 
-int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, uint8_t *phase_max, int *freq_offset_sss)
+int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, uint8_t *phase_max, int *freq_offset_sss, c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP])
 {
   uint8_t i;
   int32_t pss_ext[NB_ANTENNAS_RX][LENGTH_PSS_NR];
@@ -439,7 +438,8 @@ int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, 
                      proc,
                      pss_ext,
                      sss_ext,
-                     0);          /* subframe */
+                     0,
+                     rxdataF);          /* subframe */
 
 #ifdef DEBUG_PLOT_SSS
 
@@ -511,9 +511,15 @@ int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, 
   /* cosinus cos(x + y) = cos(x)cos(y) - sin(x)sin(y) */
   /* sinus   sin(x + y) = sin(x)cos(y) + cos(x)sin(y) */
 
-   for (Nid1 = 0 ; Nid1 < N_ID_1_NUMBER; Nid1++) {          // all possible Nid1 values
-      for (phase=0; phase < PHASE_HYPOTHESIS_NUMBER; phase++) {  // phase offset between PSS and SSS
+  uint16_t Nid1_start = 0;
+  uint16_t Nid1_end = N_ID_1_NUMBER;
+  if (ue->target_Nid_cell != -1) {
+    Nid1_start = GET_NID1(ue->target_Nid_cell);
+    Nid1_end = Nid1_start + 1;
+  }
 
+  for (Nid1 = Nid1_start; Nid1 < Nid1_end; Nid1++) { // all possible Nid1 values
+    for (phase = 0; phase < PHASE_HYPOTHESIS_NUMBER; phase++) { // phase offset between PSS and SSS
 
       metric = 0;
       metric_re = 0;
@@ -523,7 +529,6 @@ int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, 
       // This is the inner product using one particular value of each unknown parameter
       for (i=0; i < LENGTH_SSS_NR; i++) {
 
-	
         metric_re += d[i]*(((phase_re_nr[phase]*sss[2*i])>>SCALING_METRIC_SSS_NR) - ((phase_im_nr[phase]*sss[2*i+1])>>SCALING_METRIC_SSS_NR));
                    
 #if 0
@@ -541,7 +546,7 @@ int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, 
 
 #ifdef DEBUG_SSS_NR
 
-        printf("(phase,Nid1) (%d,%d), metric_phase %d tot_metric %d, phase_max %d \n",phase, Nid1, metric, *tot_metric, *phase_max);
+	LOG_D(PHY,"(phase,Nid1) (%d,%d), metric_phase %d tot_metric %d, phase_max %d \n",phase, Nid1, metric, *tot_metric, *phase_max);
 
 #endif
       }
@@ -554,7 +559,7 @@ int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, 
   if (*tot_metric > SSS_METRIC_FLOOR_NR) {	
     Nid2 = GET_NID2(frame_parms->Nid_cell);
     Nid1 = GET_NID1(frame_parms->Nid_cell);
-    printf("Nid2 %d Nid1 %d tot_metric %d, phase_max %d \n", Nid2, Nid1, *tot_metric, *phase_max);
+    LOG_D(PHY,"Nid2 %d Nid1 %d tot_metric %d, phase_max %d \n", Nid2, Nid1, *tot_metric, *phase_max);
   }
   //#endif
 
@@ -564,7 +569,7 @@ int rx_sss_nr(PHY_VARS_NR_UE *ue, UE_nr_rxtx_proc_t *proc, int32_t *tot_metric, 
   int re = 0;
   int im = 0;
   if (Nid1 == N_ID_1_NUMBER) {
-    LOG_I(PHY,"Failled to detect SSS after PSS\n");
+    LOG_I(PHY,"Failed to detect SSS after PSS\n");
     return -1;
   }
   d = (int16_t *)&d_sss[Nid2][Nid1];

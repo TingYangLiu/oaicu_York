@@ -26,11 +26,15 @@
 	<htmlTabIcon>tasks</htmlTabIcon>
 	<repeatCount>1</repeatCount>
 	<TestCaseRequestedList>
+ 100000
+ 200000
+ 400000
  010002
  030000
  040000
  000002
- 010000
+ 010000 
+ 010010
  000001
  050000
  050001
@@ -40,22 +44,65 @@
  000001
  050000
  050001
+ 010011
  010002
  080001
  080000
+ 300000
+ 500000
 	</TestCaseRequestedList>
 	<TestCaseExclusionList></TestCaseExclusionList>
+
+	<testCase id="100000">
+		<class>Custom_Command</class>
+		<desc>To reset USRP</desc>
+		<node>obelix</node>
+		<command>sudo -S b2xx_fx3_utils --reset-device</command>
+	</testCase>
+
+	<testCase id="200000">
+		<class>Custom_Command</class>
+		<desc>Disable Sleep States (obelix)</desc>
+		<node>obelix</node>
+		<command>sudo cpupower idle-set -D 0</command>
+	</testCase>
+	<testCase id="300000">
+		<class>Custom_Command</class>
+		<desc>Enable Sleep States (obelix)</desc>
+		<node>obelix</node>
+		<command>sudo cpupower idle-set -E</command>
+	</testCase>
+	<testCase id="400000">
+		<class>Custom_Command</class>
+		<desc>Disable Sleep States (nepes)</desc>
+		<node>nepes</node>
+		<command>sudo cpupower idle-set -D 0</command>
+	</testCase>
+	<testCase id="500000">
+		<class>Custom_Command</class>
+		<desc>Enable Sleep States (nepes)</desc>
+		<node>nepes</node>
+		<command>sudo cpupower idle-set -E</command>
+	</testCase>
 
 	<testCase id="010000">
 		<class>Initialize_UE</class>
 		<desc>Initialize Quectel</desc>
 		<id>idefix</id>
-		<UE_Trace>yes</UE_Trace>
 	</testCase>
-
 	<testCase id="010002">
 		<class>Terminate_UE</class>
 		<desc>Terminate Quectel</desc>
+		<id>idefix</id>
+	</testCase>
+	<testCase id="010010">
+		<class>Attach_UE</class>
+		<desc>Attach Quectel</desc>
+		<id>idefix</id>
+	</testCase>
+	<testCase id="010011">
+		<class>Detach_UE</class>
+		<desc>Detach Quectel</desc>
 		<id>idefix</id>
 	</testCase>
 

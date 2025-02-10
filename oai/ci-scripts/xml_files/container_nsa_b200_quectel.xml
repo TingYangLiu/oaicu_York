@@ -26,15 +26,15 @@
 	<htmlTabIcon>tasks</htmlTabIcon>
 	<repeatCount>1</repeatCount>
 	<TestCaseRequestedList>
- 000001
- 010002
- 030000
- 030101
- 000001
- 030102
- 000001
+ 200000
+ 100000
+ 500000
+ 111110
+ 111111
  010000
- 000001
+ 030101
+ 030102
+ 010001
  050000
  050001
  070001
@@ -42,32 +42,80 @@
  070002
  050002
  050003
+ 010010
  010002
- 000001
  030202
  030201
+ 300000
+ 600000
 	</TestCaseRequestedList>
 	<TestCaseExclusionList></TestCaseExclusionList>
+
+	<testCase id="111110">
+		<class>Pull_Local_Registry</class>
+		<desc>Pull Images from Local Registry</desc>
+		<test_svr_id>0</test_svr_id>
+		<images_to_pull>oai-enb</images_to_pull>
+	</testCase>
+
+	<testCase id="111111">
+		<class>Pull_Local_Registry</class>
+		<desc>Pull Images from Local Registry</desc>
+		<test_svr_id>1</test_svr_id>
+		<images_to_pull>oai-gnb</images_to_pull>
+	</testCase>
+
+	<testCase id = "100000">
+		<class>Custom_Command</class>
+		<desc>Reset USRP</desc>
+		<node>nepes</node>
+		<command>sudo -S b2xx_fx3_utils --reset-device</command>
+  </testCase>
+
+	<testCase id="200000">
+		<class>Custom_Command</class>
+		<desc>Disable Sleep States (nepes)</desc>
+		<node>nepes</node>
+		<command>sudo cpupower idle-set -D 0</command>
+	</testCase>
+	<testCase id="300000">
+		<class>Custom_Command</class>
+		<desc>Enable Sleep States (nepes)</desc>
+		<node>nepes</node>
+		<command>sudo cpupower idle-set -E</command>
+	</testCase>
+	<testCase id="500000">
+		<class>Custom_Command</class>
+		<desc>Disable Sleep States (ofqot)</desc>
+		<node>ofqot</node>
+		<command>sudo cpupower idle-set -D 0</command>
+	</testCase>
+	<testCase id="600000">
+		<class>Custom_Command</class>
+		<desc>Enable Sleep States (ofqot)</desc>
+		<node>ofqot</node>
+		<command>sudo cpupower idle-set -E</command>
+	</testCase>
 
 	<testCase id="010000">
 		<class>Initialize_UE</class>
 		<desc>Initialize Quectel</desc>
 		<id>idefix</id>
 	</testCase>
-
-
 	<testCase id="010002">
 		<class>Terminate_UE</class>
 		<desc>Terminate Quectel</desc>
 		<id>idefix</id>
 	</testCase>
-
-	<testCase id="030000">
-		<class>Copy_Image_to_Test</class>
-		<desc>Copy gNB image to test server</desc>
-		<image_name>oai-gnb</image_name>
-		<registry_svr_id>0</registry_svr_id>
-		<test_svr_id>1</test_svr_id>
+	<testCase id="010001">
+		<class>Attach_UE</class>
+		<desc>Attach UE</desc>
+		<id>idefix</id>
+  </testCase>
+	<testCase id= "010010">
+		<class>Detach_UE</class>
+		<desc>Detach UE</desc>
+		<id>idefix</id>
 	</testCase>
 
 	<testCase id="030101">
@@ -137,8 +185,8 @@
 
 	<testCase id="070000">
 		<class>Iperf</class>
-		<desc>iperf (DL/125Mbps/UDP)(60 sec)(single-ue profile)</desc>
-		<iperf_args>-u -b 125M -t 60 -i 1 -fm</iperf_args>
+		<desc>iperf (DL/90Mbps/UDP)(60 sec)(single-ue profile)</desc>
+		<iperf_args>-u -b 90M -t 60 -i 1 -fm</iperf_args>
 		<direction>DL</direction>
 		<id>idefix</id>
 		<iperf_packetloss_threshold>25</iperf_packetloss_threshold>
@@ -180,6 +228,8 @@
 		<yaml_path>ci-scripts/yaml_files/nsa_b200_gnb</yaml_path>
         <eNB_instance>1</eNB_instance>
         <eNB_serverId>1</eNB_serverId>
+        <d_retx_th>1,100,100,100</d_retx_th>
+        <u_retx_th>1,100,100,100</u_retx_th>
     </testCase>
 
 </testCaseList>

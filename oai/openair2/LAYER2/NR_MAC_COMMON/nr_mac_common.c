@@ -386,78 +386,262 @@ const char table_38211_6_3_1_5_3[28][4][1] = {
     {{'1'}, {'o'}, {'o'}, {'n'}}  // tpmi 27
 };
 
-void get_info_from_tda_tables(int default_abc,
-                              int tda,
-                              int dmrs_TypeA_Position,
-                              int normal_CP,
-                              bool *is_mapping_typeA,
-                              int *startSymbolIndex,
-                              int *nrOfSymbols) {
+// TS 38.211 - Table 6.3.1.5-4: Precoding matrix W for two-layer transmission using two antenna ports, 'n' = -1 and 'o' = -j
+const char table_38211_6_3_1_5_4[3][2][2] = {
+    {{'1', '0'}, {'0', '1'}}, // tpmi 0
+    {{'1', '1'}, {'1', 'n'}}, // tpmi 1
+    {{'1', '1'}, {'j', 'o'}}  // tpmi 2
+};
+
+// TS 38.211 - Table 6.3.1.5-5: Precoding matrix W for two-layer transmission using four antenna ports, 'n' = -1 and 'o' = -j
+const char table_38211_6_3_1_5_5[22][4][2] = {
+    {{'1', '0'}, {'0', '1'}, {'0', '0'}, {'0', '0'}}, // tpmi 0
+    {{'1', '0'}, {'0', '0'}, {'0', '1'}, {'0', '0'}}, // tpmi 1
+    {{'1', '0'}, {'0', '0'}, {'0', '0'}, {'0', '1'}}, // tpmi 2
+    {{'0', '0'}, {'1', '0'}, {'0', '1'}, {'0', '0'}}, // tpmi 3
+    {{'0', '0'}, {'1', '0'}, {'0', '0'}, {'0', '1'}}, // tpmi 4
+    {{'0', '0'}, {'0', '0'}, {'1', '0'}, {'0', '1'}}, // tpmi 5
+    {{'1', '0'}, {'0', '1'}, {'1', '0'}, {'0', 'o'}}, // tpmi 6
+    {{'1', '0'}, {'0', '1'}, {'1', '0'}, {'0', 'j'}}, // tpmi 7
+    {{'1', '0'}, {'0', '1'}, {'o', '0'}, {'0', '1'}}, // tpmi 8
+    {{'1', '0'}, {'0', '1'}, {'o', '0'}, {'0', 'n'}}, // tpmi 9
+    {{'1', '0'}, {'0', '1'}, {'n', '0'}, {'0', 'o'}}, // tpmi 10
+    {{'1', '0'}, {'0', '1'}, {'n', '0'}, {'0', 'j'}}, // tpmi 11
+    {{'1', '0'}, {'0', '1'}, {'j', '0'}, {'0', '1'}}, // tpmi 12
+    {{'1', '0'}, {'0', '1'}, {'j', '0'}, {'0', 'n'}}, // tpmi 13
+    {{'1', '1'}, {'1', '1'}, {'1', 'n'}, {'1', 'n'}}, // tpmi 14
+    {{'1', '1'}, {'1', '1'}, {'j', 'o'}, {'j', 'o'}}, // tpmi 15
+    {{'1', '1'}, {'j', 'j'}, {'1', 'n'}, {'j', 'o'}}, // tpmi 16
+    {{'1', '1'}, {'j', 'j'}, {'j', 'o'}, {'n', '1'}}, // tpmi 17
+    {{'1', '1'}, {'n', 'n'}, {'1', 'n'}, {'n', '1'}}, // tpmi 18
+    {{'1', '1'}, {'n', 'n'}, {'j', 'o'}, {'o', 'j'}}, // tpmi 19
+    {{'1', '1'}, {'o', 'o'}, {'1', 'n'}, {'o', 'j'}}, // tpmi 20
+    {{'1', '1'}, {'o', 'o'}, {'j', 'o'}, {'1', 'n'}}  // tpmi 21
+};
+
+// Default PUSCH time domain resource allocation tables from 38.214
+const uint8_t table_6_1_2_1_1_2[16][4] = {
+    {0, 0, 0, 14}, // row index 1
+    {0, 0, 0, 12}, // row index 2
+    {0, 0, 0, 10}, // row index 3
+    {1, 0, 2, 10}, // row index 4
+    {1, 0, 4, 10}, // row index 5
+    {1, 0, 4, 8}, // row index 6
+    {1, 0, 4, 6}, // row index 7
+    {0, 1, 0, 14}, // row index 8
+    {0, 1, 0, 12}, // row index 9
+    {0, 1, 0, 10}, // row index 10
+    {0, 2, 0, 14}, // row index 11
+    {0, 2, 0, 12}, // row index 12
+    {0, 2, 0, 10}, // row index 13
+    {1, 0, 8, 6}, // row index 14
+    {0, 3, 0, 14}, // row index 15
+    {0, 3, 0, 10} // row index 16
+};
+
+const uint8_t table_6_1_2_1_1_3[16][4] = {
+    {0, 0, 0, 8}, // row index 1
+    {0, 0, 0, 12}, // row index 2
+    {0, 0, 0, 10}, // row index 3
+    {1, 0, 2, 10}, // row index 4
+    {1, 0, 4, 4}, // row index 5
+    {1, 0, 4, 8}, // row index 6
+    {1, 0, 4, 6}, // row index 7
+    {0, 1, 0, 8}, // row index 8
+    {0, 1, 0, 12}, // row index 9
+    {0, 1, 0, 10}, // row index 10
+    {0, 2, 0, 6}, // row index 11
+    {0, 2, 0, 12}, // row index 12
+    {0, 2, 0, 10}, // row index 13
+    {1, 0, 8, 4}, // row index 14
+    {0, 3, 0, 8}, // row index 15
+    {0, 3, 0, 10} // row index 16
+};
+
+NR_tda_info_t get_ul_tda_info(const NR_UE_UL_BWP_t *ul_bwp, int controlResourceSetId, int ss_type, nr_rnti_type_t rnti_type, int tda_index)
+{
+  NR_tda_info_t tda_info = {0};
+  NR_PUSCH_TimeDomainResourceAllocationList_t *tdalist = get_ul_tdalist(ul_bwp, controlResourceSetId, ss_type, rnti_type);
+  // Definition of value j in Table 6.1.2.1.1-4 of 38.214
+  int scs = ul_bwp->scs;
+  AssertFatal(scs >= 0 &&  scs < 5, "Subcarrier spacing indicatior %d invalid value\n", scs);
+  int j = scs == 0 ? 1 : scs;
+  if (tdalist) {
+    AssertFatal(tda_index < tdalist->list.count, "TDA index from DCI %d exceeds TDA list array size %d\n", tda_index, tdalist->list.count);
+    NR_PUSCH_TimeDomainResourceAllocation_t *tda = tdalist->list.array[tda_index];
+    tda_info.mapping_type = tda->mappingType;
+    // As described in 38.331, when the field is absent the UE applies the value 1 when PUSCH SCS is 15/30KHz
+    // 2 when PUSCH SCS is 60KHz and 3 when PUSCH SCS is 120KHz. This equates to the parameter j.
+    tda_info.k2 = tda->k2 ? *tda->k2 : j;
+    int S, L;
+    SLIV2SL(tda->startSymbolAndLength, &S, &L);
+    tda_info.startSymbolIndex = S;
+    tda_info.nrOfSymbols = L;
+  } else {
+    bool normal_CP = ul_bwp->cyclicprefix ? false : true;
+    if (normal_CP) {
+      tda_info.mapping_type = table_6_1_2_1_1_2[tda_index][0];
+      tda_info.k2 = table_6_1_2_1_1_2[tda_index][1] + j;
+      tda_info.startSymbolIndex = table_6_1_2_1_1_2[tda_index][2];
+      tda_info.nrOfSymbols = table_6_1_2_1_1_2[tda_index][3];
+    } else {
+      tda_info.mapping_type = table_6_1_2_1_1_3[tda_index][0];
+      tda_info.k2 = table_6_1_2_1_1_3[tda_index][1] + j;
+      tda_info.startSymbolIndex = table_6_1_2_1_1_3[tda_index][2];
+      tda_info.nrOfSymbols = table_6_1_2_1_1_3[tda_index][3];
+    }
+  }
+  return tda_info;
+}
+
+NR_tda_info_t get_info_from_tda_tables(default_table_type_t table_type,
+                                       int tda,
+                                       int dmrs_TypeA_Position,
+                                       int normal_CP)
+{
+  NR_tda_info_t tda_info = {0};
+  bool is_mapping_typeA;
   int k0 = 0;
-  switch(default_abc){
-    case 1:
+  switch(table_type){
+    case defaultA:
       if (normal_CP){
         if (dmrs_TypeA_Position){
-          *is_mapping_typeA = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos3[tda][0];
+          is_mapping_typeA = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos3[tda][0];
           k0 = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos3[tda][1];
-          *startSymbolIndex = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos3[tda][2];
-          *nrOfSymbols = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos3[tda][3];
+          tda_info.startSymbolIndex = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos3[tda][2];
+          tda_info.nrOfSymbols = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos3[tda][3];
         }
         else{
-          *is_mapping_typeA = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos2[tda][0];
+          is_mapping_typeA = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos2[tda][0];
           k0 = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos2[tda][1];
-          *startSymbolIndex = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos2[tda][2];
-          *nrOfSymbols = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos2[tda][3];
+          tda_info.startSymbolIndex = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos2[tda][2];
+          tda_info.nrOfSymbols = table_5_1_2_1_1_2_time_dom_res_alloc_A_dmrs_typeA_pos2[tda][3];
         }
       }
       else{
         if (dmrs_TypeA_Position){
-          *is_mapping_typeA = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos3[tda][0];
+          is_mapping_typeA = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos3[tda][0];
           k0 = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos3[tda][1];
-          *startSymbolIndex = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos3[tda][2];
-          *nrOfSymbols = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos3[tda][3];
+          tda_info.startSymbolIndex = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos3[tda][2];
+          tda_info.nrOfSymbols = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos3[tda][3];
         }
         else{
-          *is_mapping_typeA = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos2[tda][0];
+          is_mapping_typeA = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos2[tda][0];
           k0 = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos2[tda][1];
-          *startSymbolIndex = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos2[tda][2];
-          *nrOfSymbols = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos2[tda][3];
+          tda_info.startSymbolIndex = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos2[tda][2];
+          tda_info.nrOfSymbols = table_5_1_2_1_1_3_time_dom_res_alloc_A_extCP_dmrs_typeA_pos2[tda][3];
         }
       }
       break;
-    case 2:
+    case defaultB:
       if (dmrs_TypeA_Position){
-        *is_mapping_typeA = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos3[tda][0];
+        is_mapping_typeA = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos3[tda][0];
         k0 = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos3[tda][1];
-        *startSymbolIndex = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos3[tda][2];
-        *nrOfSymbols = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos3[tda][3];
+        tda_info.startSymbolIndex = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos3[tda][2];
+        tda_info.nrOfSymbols = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos3[tda][3];
       }
       else{
-        *is_mapping_typeA = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos2[tda][0];
+        is_mapping_typeA = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos2[tda][0];
         k0 = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos2[tda][1];
-        *startSymbolIndex = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos2[tda][2];
-        *nrOfSymbols = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos2[tda][3];
+        tda_info.startSymbolIndex = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos2[tda][2];
+        tda_info.nrOfSymbols = table_5_1_2_1_1_4_time_dom_res_alloc_B_dmrs_typeA_pos2[tda][3];
       }
       break;
-    case 3:
+    case defaultC:
       if (dmrs_TypeA_Position){
-        *is_mapping_typeA = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos3[tda][0];
+        is_mapping_typeA = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos3[tda][0];
         k0 = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos3[tda][1];
-        *startSymbolIndex = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos3[tda][2];
-        *nrOfSymbols = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos3[tda][3];
+        tda_info.startSymbolIndex = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos3[tda][2];
+        tda_info.nrOfSymbols = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos3[tda][3];
       }
       else{
-        *is_mapping_typeA = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos2[tda][0];
+        is_mapping_typeA = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos2[tda][0];
         k0 = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos2[tda][1];
-        *startSymbolIndex = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos2[tda][2];
-        *nrOfSymbols = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos2[tda][3];
+        tda_info.startSymbolIndex = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos2[tda][2];
+        tda_info.nrOfSymbols = table_5_1_2_1_1_5_time_dom_res_alloc_C_dmrs_typeA_pos2[tda][3];
       }
       break;
     default:
-     AssertFatal(1==0,"Invalid default time domaing allocation type\n");
+     AssertFatal(1 == 0, "Invalid default time domaing allocation type\n");
   }
-  AssertFatal(k0==0,"Only k0 = 0 is supported\n");
+  AssertFatal(k0 == 0, "Only k0 = 0 is supported\n");
+  tda_info.mapping_type = is_mapping_typeA ? typeA : typeB;
+  return tda_info;
 }
+
+default_table_type_t get_default_table_type(int mux_pattern)
+{
+  switch (mux_pattern) {
+    case 1:
+      return defaultA;
+    case 2:
+      return defaultB;
+    case 3:
+      return defaultC;
+    default :
+      AssertFatal(1 == 0, "Invalid multiplexing type %d\n", mux_pattern);
+  }
+}
+
+NR_tda_info_t set_tda_info_from_list(NR_PDSCH_TimeDomainResourceAllocationList_t *tdalist, int tda_index)
+{
+  NR_tda_info_t tda_info = {0};
+  AssertFatal(tda_index < tdalist->list.count, "TDA index from DCI %d exceeds TDA list array size %d\n", tda_index, tdalist->list.count);
+  NR_PDSCH_TimeDomainResourceAllocation_t *tda = tdalist->list.array[tda_index];
+  tda_info.mapping_type = tda->mappingType;
+  int S, L;
+  SLIV2SL(tda->startSymbolAndLength, &S, &L);
+  tda_info.startSymbolIndex = S;
+  tda_info.nrOfSymbols = L;
+  return tda_info;
+}
+
+NR_tda_info_t get_dl_tda_info(const NR_UE_DL_BWP_t *dl_BWP, int ss_type, int tda_index, int dmrs_typeA_pos,
+                              int mux_pattern, nr_rnti_type_t rnti_type, int coresetid, bool sib1)
+{
+  NR_tda_info_t tda_info;
+  bool normal_CP = dl_BWP->cyclicprefix ? false : true;
+  // implements Table 5.1.2.1.1-1 of 38.214
+  NR_PDSCH_TimeDomainResourceAllocationList_t *tdalist = get_dl_tdalist(dl_BWP, coresetid, ss_type, rnti_type);
+  switch (rnti_type) {
+    case NR_RNTI_SI:
+      if(sib1) {
+        default_table_type_t table_type = get_default_table_type(mux_pattern);
+        tda_info = get_info_from_tda_tables(table_type, tda_index, dmrs_typeA_pos, normal_CP);
+      }
+      else {
+        if(tdalist)
+          tda_info = set_tda_info_from_list(tdalist, tda_index);
+        else {
+          default_table_type_t table_type = get_default_table_type(mux_pattern);
+          tda_info = get_info_from_tda_tables(table_type, tda_index, dmrs_typeA_pos, normal_CP);
+        }
+      }
+      break;
+    case NR_RNTI_P:
+      if(tdalist)
+        tda_info = set_tda_info_from_list(tdalist, tda_index);
+      else {
+        default_table_type_t table_type = get_default_table_type(mux_pattern);
+        tda_info = get_info_from_tda_tables(table_type, tda_index, dmrs_typeA_pos, normal_CP);
+      }
+      break;
+    case NR_RNTI_C:
+    case NR_RNTI_CS:
+    case NR_RNTI_MCS_C:
+    case NR_RNTI_RA:
+    case NR_RNTI_TC:
+      if(tdalist)
+        tda_info = set_tda_info_from_list(tdalist, tda_index);
+      else
+        tda_info = get_info_from_tda_tables(defaultA, tda_index, dmrs_typeA_pos, normal_CP);
+      break;
+    default :
+      AssertFatal(1 == 0, "Invalid RNTI type\n");
+  }
+  return tda_info;
+}
+
 
 const char *prachfmt[]={"0","1","2","3", "A1","A2","A3","B1","B4","C0","C2","A1/B1","A2/B2","A3/B3"};
 
@@ -496,70 +680,50 @@ uint16_t get_NCS(uint8_t index, uint16_t format0, uint8_t restricted_set_config)
   }
 }
 
-//38.211 Table 6.3.3.2-1
-int16_t table_6_3_3_2_1[16][5] = {
-//Length_RA, delta_f_RA_PRACH, delta_f_PUSCH, N_RA_RB, kbar
-{ 839,        1.25,             15,            6,      7},
-{ 839,        1.25,             30,            3,      1},
-{ 839,        1.25,             60,            2,    133},
-{ 839,           5,             15,           24,     12},
-{ 839,           5,             30,           12,     10},
-{ 839,           5,             60,            6,      7},
-{ 139,          15,             15,           12,      2},
-{ 139,          15,             30,            6,      2},
-{ 139,          15,             60,            3,      2},
-{ 139,          30,             15,           24,      2},
-{ 139,          30,             30,           12,      2},
-{ 139,          30,             60,            6,      2},
-{ 139,          60,             60,           12,      2},
-{ 139,          60,            120,            6,      2},
-{ 139,         120,             60,           24,      2},
-{ 139,         120,            120,           12,      2}
-};
+//from 38.211 Table 6.3.3.2-1
+int16_t N_RA_RB[16] = {6, 3, 2, 24, 12, 6, 12, 6, 3, 24, 12, 6, 12, 6, 24, 12};
 
 /* Function to get number of RBs required for prach occasion based on
  * 38.211 Table 6.3.3.2-1 */
 int16_t get_N_RA_RB (int delta_f_RA_PRACH,int delta_f_PUSCH) {
 	
-	int8_t index = 0;
-	switch(delta_f_RA_PRACH) {
-			case 0 : index = 6;
-		          if (delta_f_PUSCH == 0)
-			          index += 0;
-		          else if(delta_f_PUSCH == 1)
-			          index += 1;
-		          else
-			          index += 2;
-							break;
-
-		case 1 : index = 9;
-		         if (delta_f_PUSCH == 0)
-			         index += 0;
-		         else if(delta_f_PUSCH == 1)
-		           index += 1;
-		         else
-			          index += 2;
-	           break;
-
-		case 2 : index = 11;
-		         if (delta_f_PUSCH == 2)
-			         index += 0;
-		         else
-			         index += 1;
-		         break;		
-		
-		case 3: index = 13;
-		          if (delta_f_PUSCH == 2)
-			          index += 0;
-		          else
-			          index += 1;
-		          break;
-
-		default : index = 10;/*30khz prach scs and 30khz pusch scs*/
-				
-	}
-  
-	return table_6_3_3_2_1[index][3];
+  int8_t index = 0;
+  switch(delta_f_RA_PRACH) {
+    case 0 :
+      index = 6;
+      if (delta_f_PUSCH == 0)
+        index += 0;
+      else if(delta_f_PUSCH == 1)
+        index += 1;
+      else
+        index += 2;
+      break;
+    case 1 :
+      index = 9;
+      if (delta_f_PUSCH == 0)
+        index += 0;
+      else if(delta_f_PUSCH == 1)
+        index += 1;
+      else
+        index += 2;
+      break;
+    case 2 :
+      index = 11;
+      if (delta_f_PUSCH == 2)
+        index += 0;
+      else
+        index += 1;
+      break;		
+    case 3:
+      index = 13;
+      if (delta_f_PUSCH == 2)
+        index += 0;
+      else
+        index += 1;
+      break;
+    default : index = 10;/*30khz prach scs and 30khz pusch scs*/
+  }
+  return N_RA_RB[index];
 }	
 // Table 6.3.3.2-2: Random access configurations for FR1 and paired spectrum/supplementary uplink
 // the column 5, (SFN_nbr is a bitmap where we set bit to '1' in the position of the subframe where the RACH can be sent.
@@ -1386,7 +1550,7 @@ int64_t *get_prach_config_info(frequency_range_t freq_range,
 
 void find_aggregation_candidates(uint8_t *aggregation_level,
                                  uint8_t *nr_of_candidates,
-                                 NR_SearchSpace_t *ss,
+                                 const NR_SearchSpace_t *ss,
                                  int L) {
   AssertFatal(L>=1 && L<=16,"L %d not ok\n",L);
   *nr_of_candidates = 0;
@@ -2443,7 +2607,7 @@ static inline uint8_t get_table_idx(uint8_t mcs_table, uint8_t dci_format, uint8
 // Table 5.1.2.2.1-1 38.214
 uint8_t getRBGSize(uint16_t bwp_size, long rbg_size_config) {
   
-  AssertFatal(bwp_size<276,"BWP Size > 275\n");
+  AssertFatal(bwp_size < 276,"Invalid BWP Size > 275\n");
   
   if (bwp_size < 37)  return (rbg_size_config ? 4 : 2);
   if (bwp_size < 73)  return (rbg_size_config ? 8 : 4);
@@ -2454,8 +2618,7 @@ uint8_t getRBGSize(uint16_t bwp_size, long rbg_size_config) {
 uint8_t getNRBG(uint16_t bwp_size, uint16_t bwp_start, long rbg_size_config) {
 
   uint8_t rbg_size = getRBGSize(bwp_size,rbg_size_config);
-
-  return (uint8_t)ceil((bwp_size+(bwp_start % rbg_size))/rbg_size);
+  return (uint8_t)ceil((float)(bwp_size+(bwp_start % rbg_size))/(float)rbg_size);
 }
 
 uint8_t getAntPortBitWidth(NR_SetupRelease_DMRS_DownlinkConfig_t *typeA, NR_SetupRelease_DMRS_DownlinkConfig_t *typeB) {
@@ -2669,38 +2832,18 @@ uint16_t get_nr_srs_offset(NR_SRS_PeriodicityAndOffset_t periodicityAndOffset) {
 
 // Set the transform precoding status according to 6.1.3 of 3GPP TS 38.214 version 16.3.0 Release 16:
 // - "UE procedure for applying transform precoding on PUSCH"
-uint8_t get_transformPrecoding(const NR_BWP_UplinkCommon_t *initialUplinkBWP,
-                               const NR_PUSCH_Config_t *pusch_config,
-                               const NR_BWP_UplinkDedicated_t *ubwp,
-                               uint8_t *dci_format,
-                               int rnti_type,
-                               uint8_t configuredGrant){
+long get_transformPrecoding(const NR_UE_UL_BWP_t *current_UL_BWP, nr_dci_format_t dci_format, uint8_t configuredGrant)
+{
+  if (configuredGrant && current_UL_BWP->configuredGrantConfig && current_UL_BWP->configuredGrantConfig->transformPrecoder)
+    return *current_UL_BWP->configuredGrantConfig->transformPrecoder;
 
-  if (configuredGrant) {
-    if (ubwp->configuredGrantConfig) {
-      if (ubwp->configuredGrantConfig->choice.setup->transformPrecoder) {
-        return *ubwp->configuredGrantConfig->choice.setup->transformPrecoder;
-      }
-    }
-  }
+  if (dci_format == NR_UL_DCI_FORMAT_0_1 && current_UL_BWP && current_UL_BWP->pusch_Config && current_UL_BWP->pusch_Config->transformPrecoder)
+    return *current_UL_BWP->pusch_Config->transformPrecoder;
 
-  if (rnti_type != NR_RNTI_RA && rnti_type != NR_RNTI_TC) {
-    if (*dci_format != NR_UL_DCI_FORMAT_0_0) {
-      if (pusch_config && pusch_config->transformPrecoder != NULL) {
-        return *pusch_config->transformPrecoder;
-      }
-    }
-  }
+  if (current_UL_BWP->rach_ConfigCommon && current_UL_BWP->rach_ConfigCommon->msg3_transformPrecoder)
+    return NR_PUSCH_Config__transformPrecoder_enabled;
 
-  if (initialUplinkBWP->rach_ConfigCommon->choice.setup->msg3_transformPrecoder == NULL) {
-    return 1; // Transformprecoding disabled
-  } else {
-    LOG_D(PHY, "MAC_COMMON: Transform Precodig enabled through msg3_transformPrecoder\n");
-    return 0; // Enabled
-  }
-
-  LOG_E(MAC, "In %s: could not fetch transform precoder status...\n", __FUNCTION__);
-  return -1;
+  return NR_PUSCH_Config__transformPrecoder_disabled;
 }
 
 uint8_t get_pusch_nb_antenna_ports(NR_PUSCH_Config_t *pusch_Config,
@@ -2737,7 +2880,7 @@ uint8_t compute_srs_resource_indicator(NR_PUSCH_ServingCellConfig_t *pusch_servi
                                        NR_PUSCH_Config_t *pusch_Config,
                                        NR_SRS_Config_t *srs_config,
                                        nr_srs_feedback_t *srs_feedback,
-                                       uint16_t *val)
+                                       uint32_t *val)
 {
   uint8_t nbits = 0;
 
@@ -2859,7 +3002,7 @@ uint8_t compute_precoding_information(NR_PUSCH_Config_t *pusch_Config,
                                       dci_field_t srs_resource_indicator,
                                       nr_srs_feedback_t *srs_feedback,
                                       const uint8_t *nrOfLayers,
-                                      uint16_t *val) {
+                                      uint32_t *val) {
 
   // It is only applicable to codebook based transmission. This field occupies 0 bits for non-codebook based
   // transmission. It also occupies 0 bits for codebook based transmission using a single antenna port.
@@ -3098,70 +3241,97 @@ uint8_t compute_precoding_information(NR_PUSCH_Config_t *pusch_Config,
   return nbits;
 }
 
-uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
-                     const NR_BWP_UplinkCommon_t *initialUplinkBWP,
+NR_PDSCH_TimeDomainResourceAllocationList_t *get_dl_tdalist(const NR_UE_DL_BWP_t *DL_BWP, int controlResourceSetId, int ss_type, nr_rnti_type_t rnti_type)
+{
+  if (!DL_BWP)
+    return NULL;
+  // see table 5.1.2.1.1-1 in 38.214
+  if ((rnti_type == NR_RNTI_CS || rnti_type == NR_RNTI_C || rnti_type == NR_RNTI_MCS_C) && !(ss_type == NR_SearchSpace__searchSpaceType_PR_common && controlResourceSetId == 0)
+      && (DL_BWP->pdsch_Config && DL_BWP->pdsch_Config->pdsch_TimeDomainAllocationList))
+    return DL_BWP->pdsch_Config->pdsch_TimeDomainAllocationList->choice.setup;
+  else
+    return DL_BWP->tdaList_Common;
+}
+
+NR_PUSCH_TimeDomainResourceAllocationList_t *get_ul_tdalist(const NR_UE_UL_BWP_t *UL_BWP, int controlResourceSetId, int ss_type, nr_rnti_type_t rnti_type)
+{
+  if ((rnti_type == NR_RNTI_CS || rnti_type == NR_RNTI_C || rnti_type == NR_RNTI_MCS_C) && !(ss_type == NR_SearchSpace__searchSpaceType_PR_common && controlResourceSetId == 0)
+      && (UL_BWP->pusch_Config && UL_BWP->pusch_Config->pusch_TimeDomainAllocationList))
+    return UL_BWP->pusch_Config->pusch_TimeDomainAllocationList->choice.setup;
+  else
+    return UL_BWP->tdaList_Common;
+}
+
+uint16_t get_rb_bwp_dci(nr_dci_format_t format,
+                        int ss_type,
+                        uint16_t cset0_bwp_size,
+                        uint16_t ul_bwp_size,
+                        uint16_t dl_bwp_size,
+                        uint16_t initial_ul_bwp_size,
+                        uint16_t initial_dl_bwp_size)
+{
+  uint16_t N_RB;
+  if (format == NR_UL_DCI_FORMAT_0_0 || format == NR_UL_DCI_FORMAT_0_1) {
+    if(format == NR_UL_DCI_FORMAT_0_0 && ss_type == NR_SearchSpace__searchSpaceType_PR_common)
+      N_RB = initial_ul_bwp_size;
+    else
+      N_RB = ul_bwp_size;
+  }
+  else {
+    if(format == NR_DL_DCI_FORMAT_1_0 && ss_type == NR_SearchSpace__searchSpaceType_PR_common) {
+      N_RB = cset0_bwp_size ? cset0_bwp_size : initial_dl_bwp_size;
+    }
+    else
+      N_RB = dl_bwp_size;
+  }
+  return N_RB;
+}
+
+uint16_t nr_dci_size(const NR_UE_DL_BWP_t *DL_BWP,
+                     const NR_UE_UL_BWP_t *UL_BWP,
                      const NR_CellGroupConfig_t *cg,
                      dci_pdu_rel15_t *dci_pdu,
                      nr_dci_format_t format,
                      nr_rnti_type_t rnti_type,
-                     uint16_t N_RB,
+                     NR_ControlResourceSet_t *coreset,
                      int bwp_id,
-                     NR_ControlResourceSetId_t coreset_id,
-                     uint16_t cset0_bwp_size) {
+                     int ss_type,
+                     uint16_t cset0_bwp_size,
+                     uint16_t alt_size)
+{
 
   uint16_t size = 0;
   uint16_t numRBG = 0;
   long rbg_size_config;
   int num_entries = 0;
 
-  NR_UplinkConfig_t	*uplinkConfig = NULL;
-  if (cg && cg->spCellConfig && cg->spCellConfig->spCellConfigDedicated) {
-    uplinkConfig = cg->spCellConfig->spCellConfigDedicated->uplinkConfig;
-  }
+  NR_PDSCH_Config_t *pdsch_Config = DL_BWP ? DL_BWP->pdsch_Config : NULL;
+  NR_PUSCH_Config_t *pusch_Config = UL_BWP ? UL_BWP->pusch_Config : NULL;
+  NR_PUCCH_Config_t *pucch_Config = UL_BWP ? UL_BWP->pucch_Config : NULL;
+  NR_SRS_Config_t *srs_config = UL_BWP ? UL_BWP->srs_Config : NULL;
 
-  const NR_BWP_DownlinkDedicated_t *bwpd = NULL;
-  const NR_BWP_UplinkDedicated_t *ubwpd = NULL;
-  const NR_BWP_DownlinkCommon_t *bwpc = NULL;
-  const NR_BWP_UplinkCommon_t *ubwpc = NULL;
-  NR_PDSCH_Config_t *pdsch_Config = NULL;
-  NR_PUSCH_Config_t *pusch_Config = NULL;
-  NR_PUCCH_Config_t *pucch_Config = NULL;
-  NR_PDCCH_Config_t *pdcch_Config = NULL;
-  NR_SRS_Config_t *srs_config = NULL;
-  if(bwp_id > 0) {
-    AssertFatal(cg!=NULL,"Cellgroup is null and bwp_id!=0");
-    bwpd = cg->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list.array[bwp_id-1]->bwp_Dedicated;
-    bwpc = cg->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list.array[bwp_id-1]->bwp_Common;
-    ubwpd = uplinkConfig ? uplinkConfig->uplinkBWP_ToAddModList->list.array[bwp_id-1]->bwp_Dedicated : NULL;
-    ubwpc = uplinkConfig ? uplinkConfig->uplinkBWP_ToAddModList->list.array[bwp_id-1]->bwp_Common : NULL;
-    pdsch_Config = (bwpd->pdsch_Config) ? bwpd->pdsch_Config->choice.setup : NULL;
-    pdcch_Config = (bwpd->pdcch_Config) ? bwpd->pdcch_Config->choice.setup : NULL;
-    pucch_Config = (ubwpd->pucch_Config) ? ubwpd->pucch_Config->choice.setup : NULL;
-    pusch_Config = (ubwpd->pusch_Config) ? ubwpd->pusch_Config->choice.setup : NULL;
-    srs_config = (ubwpd->srs_Config) ? ubwpd->srs_Config->choice.setup : NULL;
-  } else if (cg) {
-    bwpc = initialDownlinkBWP;
-    ubwpc = initialUplinkBWP;
-    bwpd = cg->spCellConfig && cg->spCellConfig->spCellConfigDedicated ?
-           cg->spCellConfig->spCellConfigDedicated->initialDownlinkBWP : NULL;
-    ubwpd = uplinkConfig ? uplinkConfig->initialUplinkBWP : NULL;
-    pdsch_Config = (bwpd && bwpd->pdsch_Config) ? bwpd->pdsch_Config->choice.setup : NULL;
-    pdcch_Config = (bwpd && bwpd->pdcch_Config) ? bwpd->pdcch_Config->choice.setup : NULL;
-    pucch_Config = (ubwpd && ubwpd->pucch_Config) ? ubwpd->pucch_Config->choice.setup : NULL;
-    pusch_Config = (ubwpd && ubwpd->pusch_Config) ? ubwpd->pusch_Config->choice.setup :  NULL;
-    srs_config = (ubwpd && ubwpd->srs_Config) ? ubwpd->srs_Config->choice.setup: NULL;
-  }
+  uint16_t N_RB = cset0_bwp_size;
+  if (DL_BWP)
+    N_RB = get_rb_bwp_dci(format,
+                          ss_type,
+                          cset0_bwp_size,
+                          UL_BWP->BWPSize,
+                          DL_BWP->BWPSize,
+                          UL_BWP->initial_BWPSize,
+                          DL_BWP->initial_BWPSize);
 
-  int n_ul_bwp=1,n_dl_bwp=1;
   switch(format) {
-    /*Only sizes for 0_0 and 1_0 are correct at the moment*/
     case NR_UL_DCI_FORMAT_0_0:
       /// fixed: Format identifier 1, Hop flag 1, MCS 5, NDI 1, RV 2, HARQ PID 4, PUSCH TPC 2 Time Domain assgnmt 4 --20
       size += 20;
-      size += (uint8_t)ceil( log2( (N_RB*(N_RB+1))>>1 ) ); // Freq domain assignment -- hopping scenario to be updated
-      int dci_10_size = nr_dci_size(initialDownlinkBWP,initialUplinkBWP,cg,dci_pdu,NR_DL_DCI_FORMAT_1_0, rnti_type, N_RB, bwp_id, coreset_id, cset0_bwp_size);
-      AssertFatal(dci_10_size >= size, "NR_UL_DCI_FORMAT_0_0 size is bigger than NR_DL_DCI_FORMAT_1_0! 3GPP TS 38.212 Section 7.3.1.0: DCI size alignment is not fully implemented");
-      size += dci_10_size - size; // Padding to match 1_0 size
+      dci_pdu->frequency_domain_assignment.nbits = (uint8_t)ceil(log2((N_RB * (N_RB + 1)) >>1)); // Freq domain assignment -- hopping scenario to be updated
+      size += dci_pdu->frequency_domain_assignment.nbits;
+      if(alt_size >= size)
+        size += alt_size - size; // Padding to match 1_0 size
+      else if (ss_type == NR_SearchSpace__searchSpaceType_PR_common) {
+        dci_pdu->frequency_domain_assignment.nbits -= (size - alt_size);
+        size = alt_size;
+      }
       // UL/SUL indicator assumed to be 0
       break;
 
@@ -3179,14 +3349,11 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
         size += dci_pdu->ul_sul_indicator.nbits;
       }
       // BWP Indicator
-      n_ul_bwp = 0;
-      if (cg->spCellConfig->spCellConfigDedicated->uplinkConfig &&
-          cg->spCellConfig->spCellConfigDedicated->uplinkConfig->uplinkBWP_ToAddModList)
-         n_ul_bwp = cg->spCellConfig->spCellConfigDedicated->uplinkConfig->uplinkBWP_ToAddModList->list.count;
-      if (n_ul_bwp < 2)
-        dci_pdu->bwp_indicator.nbits = n_ul_bwp;
+      if (UL_BWP->n_ul_bwp < 2)
+        dci_pdu->bwp_indicator.nbits = UL_BWP->n_ul_bwp;
       else
         dci_pdu->bwp_indicator.nbits = 2;
+      LOG_D(NR_MAC, "BWP indicator nbits %d, num UL BWPs %d\n", dci_pdu->bwp_indicator.nbits, UL_BWP->n_ul_bwp);
       size += dci_pdu->bwp_indicator.nbits;
       // Freq domain assignment
       if (pusch_Config) {
@@ -3194,30 +3361,23 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
           rbg_size_config = 1;
         else
           rbg_size_config = 0;
-        numRBG = getNRBG(NRRIV2BW(ubwpc->genericParameters.locationAndBandwidth, MAX_BWP_SIZE),
-                         NRRIV2PRBOFFSET(ubwpc->genericParameters.locationAndBandwidth, MAX_BWP_SIZE),
-                         rbg_size_config);
+        numRBG = getNRBG(UL_BWP->BWPSize, UL_BWP->BWPStart, rbg_size_config);
         if (pusch_Config->resourceAllocation == 0)
           dci_pdu->frequency_domain_assignment.nbits = numRBG;
         else if (pusch_Config->resourceAllocation == 1)
-          dci_pdu->frequency_domain_assignment.nbits = (int)ceil( log2( (N_RB*(N_RB+1))>>1 ) );
+          dci_pdu->frequency_domain_assignment.nbits = (int)ceil(log2((N_RB * (N_RB + 1)) >> 1));
         else
-          dci_pdu->frequency_domain_assignment.nbits = ((int)ceil( log2( (N_RB*(N_RB+1))>>1 ) )>numRBG) ? (int)ceil( log2( (N_RB*(N_RB+1))>>1 ) )+1 : numRBG+1;
-      }
-      else dci_pdu->frequency_domain_assignment.nbits = (int)ceil( log2( (N_RB*(N_RB+1))>>1 ) );
-      LOG_D(NR_MAC,"PUSCH Frequency Domain Assignment nbits %d, N_RB %d\n",dci_pdu->frequency_domain_assignment.nbits,N_RB);
-      size += dci_pdu->frequency_domain_assignment.nbits;
-      // Time domain assignment
-      if (pusch_Config==NULL || pusch_Config->pusch_TimeDomainAllocationList==NULL) {
-        if (ubwpc->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList==NULL)
-          num_entries = 16; // num of entries in default table
-        else
-          num_entries = ubwpc->pusch_ConfigCommon->choice.setup->pusch_TimeDomainAllocationList->list.count;
+          dci_pdu->frequency_domain_assignment.nbits = ((int)ceil(log2((N_RB * (N_RB + 1)) >> 1)) > numRBG) ? (int)ceil(log2((N_RB * (N_RB + 1)) >> 1)) + 1 : numRBG + 1;
       }
       else
-        num_entries = pusch_Config->pusch_TimeDomainAllocationList->choice.setup->list.count;
+        dci_pdu->frequency_domain_assignment.nbits = (int)ceil(log2((N_RB * (N_RB + 1)) >> 1));
+      LOG_D(NR_MAC, "PUSCH Frequency Domain Assignment nbits %d, N_RB %d\n", dci_pdu->frequency_domain_assignment.nbits, N_RB);
+      size += dci_pdu->frequency_domain_assignment.nbits;
+      // Time domain assignment
+      NR_PUSCH_TimeDomainResourceAllocationList_t *tdalistul = get_ul_tdalist(UL_BWP, coreset->controlResourceSetId, ss_type, rnti_type);
+      num_entries = tdalistul ?  tdalistul->list.count : 16; // 16 in default table
       dci_pdu->time_domain_assignment.nbits = (int)ceil(log2(num_entries));
-      LOG_D(NR_MAC,"PUSCH Time Domain Allocation nbits %d, pusch_Config %p\n",dci_pdu->time_domain_assignment.nbits,pusch_Config);
+      LOG_D(NR_MAC, "PUSCH Time Domain Allocation nbits %d, pusch_Config %p\n", dci_pdu->time_domain_assignment.nbits, pusch_Config);
       size += dci_pdu->time_domain_assignment.nbits;
       // Frequency Hopping flag
       if (pusch_Config && 
@@ -3227,21 +3387,19 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
         size += 1;
       }
       // 1st DAI
-      if (cg->physicalCellGroupConfig && cg->physicalCellGroupConfig->pdsch_HARQ_ACK_Codebook == NR_PhysicalCellGroupConfig__pdsch_HARQ_ACK_Codebook_dynamic)
+      if (DL_BWP->pdsch_HARQ_ACK_Codebook && *DL_BWP->pdsch_HARQ_ACK_Codebook == NR_PhysicalCellGroupConfig__pdsch_HARQ_ACK_Codebook_dynamic)
         dci_pdu->dai[0].nbits = 2;
       else
         dci_pdu->dai[0].nbits = 1;
       size += dci_pdu->dai[0].nbits;
       LOG_D(NR_MAC, "DAI1 nbits %d\n", dci_pdu->dai[0].nbits);
       // 2nd DAI
-      if (cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig && cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup
-          && cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup->codeBlockGroupTransmission != NULL) { // TODO not sure about that
+      if (DL_BWP->pdsch_servingcellconfig && DL_BWP->pdsch_servingcellconfig->codeBlockGroupTransmission != NULL) {
         dci_pdu->dai[1].nbits = 2;
         size += dci_pdu->dai[1].nbits;
       }
       // SRS resource indicator
-      NR_PUSCH_ServingCellConfig_t *pusch_servingcellconfig = uplinkConfig && uplinkConfig->pusch_ServingCellConfig ? uplinkConfig->pusch_ServingCellConfig->choice.setup : NULL;
-      dci_pdu->srs_resource_indicator.nbits = compute_srs_resource_indicator(pusch_servingcellconfig, pusch_Config, srs_config, NULL, NULL);
+      dci_pdu->srs_resource_indicator.nbits = compute_srs_resource_indicator(UL_BWP->pusch_servingcellconfig, pusch_Config, srs_config, NULL, NULL);
       size += dci_pdu->srs_resource_indicator.nbits;
       LOG_D(NR_MAC, "dci_pdu->srs_resource_indicator.nbits %d\n", dci_pdu->srs_resource_indicator.nbits);
       // Precoding info and number of layers
@@ -3249,7 +3407,7 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
       size += dci_pdu->precoding_information.nbits;
       LOG_D(NR_MAC, "dci_pdu->precoding_informaiton.nbits=%d\n", dci_pdu->precoding_information.nbits);
       // Antenna ports
-      long transformPrecoder = get_transformPrecoding(initialUplinkBWP, pusch_Config, ubwpd, (uint8_t *)&format, rnti_type, 0);
+      long transformPrecoder = get_transformPrecoding(UL_BWP, format, 0);
       NR_DMRS_UplinkConfig_t *NR_DMRS_UplinkConfig = NULL;
       int xa = 0;
       int xb = 0;
@@ -3260,7 +3418,7 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
       if(pusch_Config &&
          pusch_Config->dmrs_UplinkForPUSCH_MappingTypeB != NULL){
         NR_DMRS_UplinkConfig = pusch_Config->dmrs_UplinkForPUSCH_MappingTypeB->choice.setup;
-        xb = ul_ant_bits(NR_DMRS_UplinkConfig,transformPrecoder);
+        xb = ul_ant_bits(NR_DMRS_UplinkConfig, transformPrecoder);
       }
       if (xa>xb)
         dci_pdu->antenna_ports.nbits = xa;
@@ -3275,16 +3433,15 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
         dci_pdu->srs_request.nbits = 3;
       size += dci_pdu->srs_request.nbits;
       // CSI request
-      if (cg->spCellConfig->spCellConfigDedicated->csi_MeasConfig != NULL) {
-        if (cg->spCellConfig->spCellConfigDedicated->csi_MeasConfig->choice.setup->reportTriggerSize != NULL) {
-          dci_pdu->csi_request.nbits = *cg->spCellConfig->spCellConfigDedicated->csi_MeasConfig->choice.setup->reportTriggerSize;
+      if (UL_BWP->csi_MeasConfig != NULL) {
+        if (UL_BWP->csi_MeasConfig->reportTriggerSize != NULL) {
+          dci_pdu->csi_request.nbits = *UL_BWP->csi_MeasConfig->reportTriggerSize;
           size += dci_pdu->csi_request.nbits;
         }
       }
       // CBGTI
-      if (cg->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig &&
-          cg->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->choice.setup->codeBlockGroupTransmission != NULL) {
-        int num = cg->spCellConfig->spCellConfigDedicated->uplinkConfig->pusch_ServingCellConfig->choice.setup->codeBlockGroupTransmission->choice.setup->maxCodeBlockGroupsPerTransportBlock;
+      if (UL_BWP->pusch_servingcellconfig && UL_BWP->pusch_servingcellconfig->codeBlockGroupTransmission != NULL) {
+        int num = UL_BWP->pusch_servingcellconfig->codeBlockGroupTransmission->choice.setup->maxCodeBlockGroupsPerTransportBlock;
         dci_pdu->cbgti.nbits = 2 + (num<<1);
         size += dci_pdu->cbgti.nbits;
       }
@@ -3320,20 +3477,17 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
       // 3GPP TS 38.212 Section 7.3.1.0: DCI size alignment
       // Size of DCI format 1_0 is given by the size of CORESET 0 if CORESET 0 is configured for the cell and the size
       // of initial DL bandwidth part if CORESET 0 is not configured for the cell
-      if(cset0_bwp_size>0) {
-        N_RB = cset0_bwp_size;
-      }
-
       size = 28;
-      size += (uint8_t)ceil( log2( (N_RB*(N_RB+1))>>1 ) ); // Freq domain assignment
-
-      dci_pdu->frequency_domain_assignment.nbits = (int)ceil( log2( (N_RB*(N_RB+1))>>1 ) );
+      dci_pdu->frequency_domain_assignment.nbits = (uint8_t)ceil(log2((N_RB * (N_RB + 1)) >> 1)); // Freq domain assignment
+      size += dci_pdu->frequency_domain_assignment.nbits;
+      if(ss_type == NR_SearchSpace__searchSpaceType_PR_ue_Specific && alt_size >= size)
+        size += alt_size - size; // Padding to match 0_0 size
       dci_pdu->time_domain_assignment.nbits = 4;
       dci_pdu->vrb_to_prb_mapping.nbits = 1;
       break;
 
     case NR_DL_DCI_FORMAT_1_1:
-      LOG_D(NR_MAC,"DCI_FORMAT 1_1 : pdsch_Config %p, pucch_Config %p\n",pdsch_Config,pucch_Config);
+      LOG_D(NR_MAC, "DCI_FORMAT 1_1 : pdsch_Config %p, pucch_Config %p\n", pdsch_Config, pucch_Config);
       // General note: 0 bits condition is ignored as default nbits is 0.
       // Format identifier
       size = 1;
@@ -3344,11 +3498,8 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
       }
 
       // BWP Indicator
-      n_dl_bwp = 0;
-      if (cg->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList)
-         n_dl_bwp = cg->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list.count;
-      if (n_dl_bwp < 2)
-        dci_pdu->bwp_indicator.nbits = n_dl_bwp;
+      if (DL_BWP->n_dl_bwp < 2)
+        dci_pdu->bwp_indicator.nbits = DL_BWP->n_dl_bwp;
       else
         dci_pdu->bwp_indicator.nbits = 2;
       size += dci_pdu->bwp_indicator.nbits;
@@ -3356,26 +3507,17 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
       if (pdsch_Config) rbg_size_config = pdsch_Config->rbg_Size;
       else rbg_size_config = 0;
       
-      numRBG = getNRBG(NRRIV2BW(bwpc->genericParameters.locationAndBandwidth, MAX_BWP_SIZE),
-                       NRRIV2PRBOFFSET(bwpc->genericParameters.locationAndBandwidth, MAX_BWP_SIZE),
-                       rbg_size_config);
+      numRBG = getNRBG(DL_BWP->BWPSize, DL_BWP->BWPStart, rbg_size_config);
       if (pdsch_Config && pdsch_Config->resourceAllocation == 0)
          dci_pdu->frequency_domain_assignment.nbits = numRBG;
       else if (pdsch_Config == NULL || pdsch_Config->resourceAllocation == 1)
-         dci_pdu->frequency_domain_assignment.nbits = (int)ceil( log2( (N_RB*(N_RB+1))>>1 ) );
+         dci_pdu->frequency_domain_assignment.nbits = (int)ceil(log2((N_RB * (N_RB + 1)) >> 1));
       else
-         dci_pdu->frequency_domain_assignment.nbits = ((int)ceil( log2( (N_RB*(N_RB+1))>>1 ) )>numRBG) ? (int)ceil( log2( (N_RB*(N_RB+1))>>1 ) )+1 : numRBG+1;
+         dci_pdu->frequency_domain_assignment.nbits = ((int)ceil(log2((N_RB * (N_RB + 1)) >> 1)) > numRBG) ? (int)ceil(log2((N_RB * (N_RB + 1)) >> 1)) + 1 : numRBG + 1;
       size += dci_pdu->frequency_domain_assignment.nbits;
       LOG_D(NR_MAC,"dci_pdu->frequency_domain_assignment.nbits %d (N_RB %d)\n",dci_pdu->frequency_domain_assignment.nbits,N_RB);
-      // Time domain assignment (see table 5.1.2.1.1-1 in 38.214
-      if (pdsch_Config == NULL || pdsch_Config->pdsch_TimeDomainAllocationList==NULL) {
-        if (bwpc->pdsch_ConfigCommon->choice.setup->pdsch_TimeDomainAllocationList==NULL)
-          num_entries = 16; // num of entries in default table
-        else
-          num_entries = bwpc->pdsch_ConfigCommon->choice.setup->pdsch_TimeDomainAllocationList->list.count;
-      }
-      else
-        num_entries = pdsch_Config->pdsch_TimeDomainAllocationList->choice.setup->list.count;
+      NR_PDSCH_TimeDomainResourceAllocationList_t *tdalist = get_dl_tdalist(DL_BWP, coreset->controlResourceSetId, ss_type, rnti_type);
+      num_entries = tdalist ?  tdalist->list.count : 16; // 16 in default table
       dci_pdu->time_domain_assignment.nbits = (int)ceil(log2(num_entries));
       LOG_D(NR_MAC,"pdsch tda.nbits= %d\n",dci_pdu->time_domain_assignment.nbits);
       size += dci_pdu->time_domain_assignment.nbits;
@@ -3417,8 +3559,7 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
       // HARQ PID
       size += 4;
       // DAI
-      if (cg->physicalCellGroupConfig &&
-          cg->physicalCellGroupConfig->pdsch_HARQ_ACK_Codebook == NR_PhysicalCellGroupConfig__pdsch_HARQ_ACK_Codebook_dynamic) { // FIXME in case of more than one serving cell
+      if (DL_BWP->pdsch_HARQ_ACK_Codebook && *DL_BWP->pdsch_HARQ_ACK_Codebook == NR_PhysicalCellGroupConfig__pdsch_HARQ_ACK_Codebook_dynamic) { // FIXME in case of more than one serving cell
         dci_pdu->dai[0].nbits = 2;
         size += dci_pdu->dai[0].nbits;
       }
@@ -3440,15 +3581,9 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
       size += dci_pdu->antenna_ports.nbits;
       LOG_D(NR_MAC,"dci_pdu->antenna_ports.nbits %d\n",dci_pdu->antenna_ports.nbits);
       // Tx Config Indication
-      for (int i = 0; i < pdcch_Config->controlResourceSetToAddModList->list.count; i++) {
-        if (pdcch_Config->controlResourceSetToAddModList->list.array[i]->controlResourceSetId == coreset_id) {
-          long *isTciEnable = pdcch_Config->controlResourceSetToAddModList->list.array[i]->tci_PresentInDCI;
-          if (isTciEnable != NULL) {
-            dci_pdu->transmission_configuration_indication.nbits = 3;
-            size += dci_pdu->transmission_configuration_indication.nbits;
-          }
-          break;
-        }
+      if (coreset->tci_PresentInDCI != NULL) {
+        dci_pdu->transmission_configuration_indication.nbits = 3;
+        size += dci_pdu->transmission_configuration_indication.nbits;
       }
       // SRS request
       if (cg->spCellConfig->spCellConfigDedicated->supplementaryUplink==NULL)
@@ -3457,16 +3592,14 @@ uint16_t nr_dci_size(const NR_BWP_DownlinkCommon_t *initialDownlinkBWP,
         dci_pdu->srs_request.nbits = 3;
       size += dci_pdu->srs_request.nbits;
       // CBGTI
-      if (cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig &&
-          cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup &&
-          cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup->codeBlockGroupTransmission != NULL) {
-        uint8_t maxCBGperTB = (cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup->codeBlockGroupTransmission->choice.setup->maxCodeBlockGroupsPerTransportBlock + 1) * 2;
+      if (DL_BWP->pdsch_servingcellconfig && DL_BWP->pdsch_servingcellconfig->codeBlockGroupTransmission != NULL) {
+        uint8_t maxCBGperTB = (DL_BWP->pdsch_servingcellconfig->codeBlockGroupTransmission->choice.setup->maxCodeBlockGroupsPerTransportBlock + 1) * 2;
         long *maxCWperDCI_rrc = pdsch_Config->maxNrofCodeWordsScheduledByDCI;
         uint8_t maxCW = (maxCWperDCI_rrc == NULL) ? 1 : *maxCWperDCI_rrc;
         dci_pdu->cbgti.nbits = maxCBGperTB * maxCW;
         size += dci_pdu->cbgti.nbits;
         // CBGFI
-        if (cg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup->codeBlockGroupTransmission->choice.setup->codeBlockGroupFlushIndicator) {
+        if (DL_BWP->pdsch_servingcellconfig->codeBlockGroupTransmission->choice.setup->codeBlockGroupFlushIndicator) {
           dci_pdu->cbgfi.nbits = 1;
           size += dci_pdu->cbgfi.nbits;
         }
@@ -3577,7 +3710,14 @@ int is_nr_UL_slot(NR_TDD_UL_DL_ConfigCommon_t	*tdd_UL_DL_ConfigurationCommon, sl
   else return(slot_in_period >= slots1+tdd_UL_DL_ConfigurationCommon->pattern2->nrofDownlinkSlots ? 1 : 0);    
 }
 
-int16_t fill_dmrs_mask(const NR_PDSCH_Config_t *pdsch_Config,int dmrs_TypeA_Position,int NrOfSymbols, int startSymbol, mappingType_t mappingtype, int length) {
+int16_t fill_dmrs_mask(const NR_PDSCH_Config_t *pdsch_Config,
+                       int dci_format,
+                       int dmrs_TypeA_Position,
+                       int NrOfSymbols,
+                       int startSymbol,
+                       mappingType_t mappingtype,
+                       int length)
+{
 
   int dmrs_AdditionalPosition = 0;
   NR_DMRS_DownlinkConfig_t *dmrs_config = NULL;
@@ -3586,8 +3726,8 @@ int16_t fill_dmrs_mask(const NR_PDSCH_Config_t *pdsch_Config,int dmrs_TypeA_Posi
 
   int l0 = 0; // type B
   if (mappingtype == typeA) {
-    if (dmrs_TypeA_Position == NR_ServingCellConfigCommon__dmrs_TypeA_Position_pos2) l0=2;
-    else if (dmrs_TypeA_Position == NR_ServingCellConfigCommon__dmrs_TypeA_Position_pos3) l0=3;
+    if (dmrs_TypeA_Position == NR_ServingCellConfigCommon__dmrs_TypeA_Position_pos2) l0 = 2;
+    else if (dmrs_TypeA_Position == NR_ServingCellConfigCommon__dmrs_TypeA_Position_pos3) l0 = 3;
     else AssertFatal(1==0,"Illegal dmrs_TypeA_Position %d\n",(int)dmrs_TypeA_Position);
   }
   // in case of DCI FORMAT 1_0 or dedicated pdsch config not received additionposition = pos2, len1 should be used
@@ -3596,7 +3736,8 @@ int16_t fill_dmrs_mask(const NR_PDSCH_Config_t *pdsch_Config,int dmrs_TypeA_Posi
 
   if (pdsch_Config != NULL) {
     if (mappingtype == typeA) { // Type A
-      if (pdsch_Config->dmrs_DownlinkForPDSCH_MappingTypeA && pdsch_Config->dmrs_DownlinkForPDSCH_MappingTypeA->present == NR_SetupRelease_DMRS_DownlinkConfig_PR_setup)
+      if (dci_format != NR_DL_DCI_FORMAT_1_0 &&
+          pdsch_Config->dmrs_DownlinkForPDSCH_MappingTypeA && pdsch_Config->dmrs_DownlinkForPDSCH_MappingTypeA->present == NR_SetupRelease_DMRS_DownlinkConfig_PR_setup)
         dmrs_config = (NR_DMRS_DownlinkConfig_t *)pdsch_Config->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup;
     } else if (mappingtype == typeB) {
       if (pdsch_Config->dmrs_DownlinkForPDSCH_MappingTypeB && pdsch_Config->dmrs_DownlinkForPDSCH_MappingTypeB->present == NR_SetupRelease_DMRS_DownlinkConfig_PR_setup)
@@ -3605,10 +3746,9 @@ int16_t fill_dmrs_mask(const NR_PDSCH_Config_t *pdsch_Config,int dmrs_TypeA_Posi
       AssertFatal(1==0,"Incorrect Mappingtype\n");
     }
 
-    AssertFatal(dmrs_config != NULL," DMRS configs not present in PDSCH DMRS Downlink config\n");
-
     // default values of additionalposition is pos2
-    if (dmrs_config->dmrs_AdditionalPosition != NULL) dmrs_AdditionalPosition = *dmrs_config->dmrs_AdditionalPosition;
+    if (dmrs_config && dmrs_config->dmrs_AdditionalPosition != NULL)
+      dmrs_AdditionalPosition = *dmrs_config->dmrs_AdditionalPosition;
   }
 
   uint8_t ld, row, column;
@@ -3659,12 +3799,36 @@ int16_t fill_dmrs_mask(const NR_PDSCH_Config_t *pdsch_Config,int dmrs_TypeA_Posi
   return l_prime;
 }
 
+uint8_t get_pdsch_mcs_table(long *mcs_Table, int dci_format, int rnti_type, int ss_type)
+{
+
+  // Set downlink MCS table (Semi-persistent scheduling ignored for now)
+  uint8_t mcsTableIdx = 0; // default value
+  if (mcs_Table &&
+      *mcs_Table == NR_PDSCH_Config__mcs_Table_qam256 &&
+      dci_format == NR_DL_DCI_FORMAT_1_1 &&
+      rnti_type == NR_RNTI_C)
+    mcsTableIdx = 1;
+  else if (rnti_type != NR_RNTI_MCS_C &&
+           mcs_Table &&
+           *mcs_Table == NR_PDSCH_Config__mcs_Table_qam64LowSE &&
+           ss_type == NR_SearchSpace__searchSpaceType_PR_ue_Specific)
+    mcsTableIdx = 2;
+  else if (rnti_type == NR_RNTI_MCS_C)
+    mcsTableIdx = 2;
+
+  LOG_D(NR_MAC,"DL MCS Table Index: %d\n", mcsTableIdx);
+  return mcsTableIdx;
+
+}
+
 uint8_t get_pusch_mcs_table(long *mcs_Table,
                             int is_tp,
                             int dci_format,
                             int rnti_type,
                             int target_ss,
-                            bool config_grant) {
+                            bool config_grant)
+{
 
   // implementing 6.1.4.1 in 38.214
   if (mcs_Table != NULL) {
@@ -3931,12 +4095,12 @@ uint8_t get_BG(uint32_t A, uint16_t R) {
     return 1;
 }
 
-uint32_t get_Y(NR_SearchSpace_t *ss, int slot, rnti_t rnti) {
+uint32_t get_Y(const NR_SearchSpace_t *ss, int slot, rnti_t rnti) {
 
   if(ss->searchSpaceType->present == NR_SearchSpace__searchSpaceType_PR_common)
     return 0;
 
-  const int cid = *ss->controlResourceSetId%3;
+  const int cid = *ss->controlResourceSetId % 3;
   const uint32_t A[3] = {39827, 39829, 39839};
   const uint32_t D = 65537;
   uint32_t Y;
@@ -4427,7 +4591,7 @@ void fill_searchSpaceZero(NR_SearchSpace_t *ss0, NR_Type0_PDCCH_CSS_config_t *ty
 }
 
 
-void find_period_offest_SR (NR_SchedulingRequestResourceConfig_t *SchedulingReqRec, int *period, int *offset) {
+void find_period_offset_SR(const NR_SchedulingRequestResourceConfig_t *SchedulingReqRec, int *period, int *offset) {
   NR_SchedulingRequestResourceConfig__periodicityAndOffset_PR P_O = SchedulingReqRec->periodicityAndOffset->present;
   switch (P_O){
     case NR_SchedulingRequestResourceConfig__periodicityAndOffset_PR_sl1:

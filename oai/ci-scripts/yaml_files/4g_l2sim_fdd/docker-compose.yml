@@ -166,7 +166,7 @@ services:
             retries: 5
 
     trf_gen:
-        image: trf-gen:production
+        image: oaisoftwarealliance/trf-gen-cn5g:focal
         privileged: true
         container_name: l2sim4g-trf-gen
         networks:
@@ -180,7 +180,7 @@ services:
             retries: 5
 
     oai_enb:
-        image: oai-enb:develop
+        image: oaisoftwarealliance/oai-enb:develop
         privileged: true
         container_name: l2sim4g-oai-enb
         network_mode: "host"
@@ -203,9 +203,6 @@ services:
             ENB_INTERFACE_NAME_FOR_S1U: eth0
             ENB_IPV4_ADDRESS_FOR_S1U: 192.168.61.1
             ENB_IPV4_ADDRESS_FOR_X2C: 192.168.61.1
-            FLEXRAN_ENABLED: 'no'
-            FLEXRAN_INTERFACE_NAME: eth0
-            FLEXRAN_IPV4_ADDRESS: 192.168.61.1
             LOCAL_S_IF_NAME: 'lo:'
             REMOTE_S_ADDRESS: 127.0.0.1
             LOCAL_S_ADDRESS: 127.0.0.2
@@ -233,7 +230,7 @@ services:
             retries: 5
 
     oai_ue1:
-        image: oai-lte-ue:develop
+        image: oaisoftwarealliance/oai-lte-ue:develop
         privileged: true
         container_name: l2sim4g-oai-lte-ue1
         network_mode: "host"
@@ -251,7 +248,7 @@ services:
             UE_NFAPI_IF_NAME: eno1
             ENB_IP_ADDRESS: 127.0.0.1
             LTE_UE_IP_ADDRESS: 127.0.0.1
-            USE_ADDITIONAL_OPTIONS: --L2-emul 5 --nokrnmod 1 --num-ues 1 --node-number 2 --log_config.global_log_options level,nocolor,time
+            USE_ADDITIONAL_OPTIONS: --L2-emul 5 --num-ues 1 --node-number 2 --log_config.global_log_options level,nocolor,time
         volumes:
             - ../../../openair1/SIMULATION/LTE_PHY/BLER_SIMULATIONS/AWGN/AWGN_results:/opt/oai-nr-ue/openair1/SIMULATION/LTE_PHY/BLER_SIMULATIONS/AWGN/AWGN_results
         healthcheck:
@@ -261,7 +258,7 @@ services:
             retries: 5
 
     oai_ue2:
-        image: oai-lte-ue:develop
+        image: oaisoftwarealliance/oai-lte-ue:develop
         privileged: true
         container_name: l2sim4g-oai-lte-ue2
         network_mode: "host"
@@ -279,7 +276,7 @@ services:
             UE_NFAPI_IF_NAME: eno1
             ENB_IP_ADDRESS: 127.0.0.1
             LTE_UE_IP_ADDRESS: 127.0.0.1
-            USE_ADDITIONAL_OPTIONS: --L2-emul 5 --nokrnmod 1 --num-ues 1 --node-number 3 --log_config.global_log_options level,nocolor,time
+            USE_ADDITIONAL_OPTIONS: --L2-emul 5 --num-ues 1 --node-number 3 --log_config.global_log_options level,nocolor,time
         volumes:
             - ../../../openair1/SIMULATION/LTE_PHY/BLER_SIMULATIONS/AWGN/AWGN_results:/opt/oai-nr-ue/openair1/SIMULATION/LTE_PHY/BLER_SIMULATIONS/AWGN/AWGN_results
         healthcheck:

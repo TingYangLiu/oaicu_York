@@ -32,11 +32,11 @@
 # include "memory.h"
 
 #include "nas_user.h"
+#include "common/ran_context.h"
 // FIXME make command line option for NAS_UE_AUTOSTART
 # define NAS_UE_AUTOSTART 1
 
 // FIXME review these externs
-extern unsigned char NB_eNB_INST;
 extern uint16_t NB_UE_INST;
 
 uint16_t ue_idx_standalone = 0xFFFF;
@@ -308,7 +308,7 @@ void *nas_ue_task(void *args_p)
     struct epoll_event events[20];
     nb_events = itti_get_events(TASK_NAS_UE, events, 20);
 
-    if ((nb_events > 0) && (events != NULL)) {
+    if (nb_events > 0) {
       if (nas_ue_process_events(users, events, nb_events) == true) {
         LOG_E(NAS, "[UE] Received exit loop\n");
       }

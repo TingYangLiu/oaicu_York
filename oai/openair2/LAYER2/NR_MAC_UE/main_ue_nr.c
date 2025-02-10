@@ -32,14 +32,13 @@
 
 //#include "defs.h"
 #include "mac_proto.h"
-#include "sdr/COMMON/common_lib.h"
+#include "radio/COMMON/common_lib.h"
 //#undef MALLOC
 #include "assertions.h"
-#include "PHY/types.h"
-#include "PHY/defs_UE.h"
 #include "openair2/LAYER2/nr_pdcp/nr_pdcp_entity.h"
 #include "executables/softmodem-common.h"
 #include "openair2/LAYER2/nr_pdcp/nr_pdcp.h"
+#include "openair2/LAYER2/nr_pdcp/nr_pdcp_oai_api.h"
 #include <pthread.h>
 
 static NR_UE_MAC_INST_t *nr_ue_mac_inst; 
@@ -52,19 +51,24 @@ NR_UE_MAC_INST_t * nr_l2_init_ue(NR_UE_RRC_INST_t* rrc_inst) {
     
     //init mac here
     nr_ue_mac_inst = (NR_UE_MAC_INST_t *)calloc(sizeof(NR_UE_MAC_INST_t),NB_NR_UE_MAC_INST);
+    nr_ue_mac_inst->first_sync_frame = -1;
+    nr_ue_mac_inst->sib1_decoded = false;
+    nr_ue_mac_inst->phy_config_request_sent = false;
+    nr_ue_mac_inst->state = UE_NOT_SYNC;
+    memset(&nr_ue_mac_inst->ssb_measurements, 0, sizeof(nr_ue_mac_inst->ssb_measurements));
 
     for (int j=0;j<NB_NR_UE_MAC_INST;j++) {
 	nr_ue_init_mac(j);
     }
-
 
     if (rrc_inst && rrc_inst->scell_group_config) {
 
       nr_rrc_mac_config_req_ue(0,0,0,NULL,NULL,NULL,rrc_inst->scell_group_config);
       AssertFatal(rlc_module_init(0) == 0, "%s: Could not initialize RLC layer\n", __FUNCTION__);
       if (IS_SOFTMODEM_NOS1){
-        pdcp_layer_init();
+        nr_pdcp_layer_init();
         nr_DRB_preconfiguration(nr_ue_mac_inst->crnti);
+        nr_ue_mac_inst->logicalChannelBearer_exist[0] = true;
       }
       // Allocate memory for ul_config_request in the mac instance. This is now a pointer and will
       // point to a list of structures (one for each UL slot) to store PUSCH scheduling parameters

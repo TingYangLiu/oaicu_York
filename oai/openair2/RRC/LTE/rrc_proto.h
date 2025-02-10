@@ -35,7 +35,6 @@
 
 #include "RRC/LTE/rrc_defs.h"
 #include "x2ap_messages_types.h"
-#include "flexran_agent_extern.h"
 
 //main.c
 int rrc_init_global_param(void);
@@ -303,12 +302,6 @@ rrc_eNB_generate_defaultRRCConnectionReconfiguration(
 );
 
 
-void
-flexran_rrc_eNB_generate_defaultRRCConnectionReconfiguration(
-  const protocol_ctxt_t *const ctxt_pP,
-  rrc_eNB_ue_context_t *const ue_context_pP,
-  const uint8_t ho_state
-);
 void
 rrc_eNB_generate_HO_RRCConnectionReconfiguration(const protocol_ctxt_t *const ctxt_pP,
     rrc_eNB_ue_context_t  *const ue_context_pP,
@@ -624,11 +617,6 @@ rrc_eNB_generate_HandoverPreparationInformation(
   //LTE_PhysCellId_t targetPhyId
 );
 
-int
-flexran_rrc_eNB_trigger_handover (int mod_id,
-                                  const protocol_ctxt_t *const ctxt_pP,
-                                  rrc_eNB_ue_context_t  *ue_context_pP,
-                                  int target_cell_id);
 
 void
 check_handovers(
@@ -667,9 +655,9 @@ rrc_eNB_free_UE(
   const struct rrc_eNB_ue_context_s         *const ue_context_pP
 );
 
-long binary_search_int(int elements[], long numElem, int value);
+long binary_search_int(const int elements[], long numElem, int value);
 
-long binary_search_float(float elements[], long numElem, float value);
+long binary_search_float(const float elements[], long numElem, float value);
 
 void openair_rrc_top_init_eNB(int eMBMS_active,uint8_t HO_active);
 

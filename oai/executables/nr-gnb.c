@@ -42,7 +42,7 @@
 
 #include "PHY/types.h"
 
-#include "PHY/INIT/phy_init.h"
+#include "PHY/INIT/nr_phy_init.h"
 
 #include "PHY/defs_gNB.h"
 #include "SCHED/sched_eNB.h"
@@ -51,11 +51,12 @@
 #include "PHY/NR_TRANSPORT/nr_transport_proto.h"
 #include "PHY/MODULATION/nr_modulation.h"
 #include "PHY/NR_TRANSPORT/nr_dlsch.h"
+#include "openair2/NR_PHY_INTERFACE/nr_sched_response.h"
 
 #undef MALLOC //there are two conflicting definitions, so we better make sure we don't use it at all
 //#undef FRAME_LENGTH_COMPLEX_SAMPLES //there are two conflicting definitions, so we better make sure we don't use it at all
 
-#include "sdr/COMMON/common_lib.h"
+#include "radio/COMMON/common_lib.h"
 
 //#undef FRAME_LENGTH_COMPLEX_SAMPLES //there are two conflicting definitions, so we better make sure we don't use it at all
 
@@ -126,9 +127,12 @@ void tx_func(void *param) {
                         1);
   clock_gettime(CLOCK_MONOTONIC,&info->gNB->rt_L1_profiling.return_L1_TX[rt_prof_idx]);
 
+  /* this thread is done with the sched_info, decrease the reference counter */
+  deref_sched_response(info->sched_response_id);
 }
 
-void rx_func(void *param) {
+void rx_func(void *param)
+{
   processingData_L1_t *info = (processingData_L1_t *) param;
   PHY_VARS_gNB *gNB = info->gNB;
   int frame_rx = info->frame_rx;
@@ -173,53 +177,11 @@ void rx_func(void *param) {
 
   T(T_GNB_PHY_DL_TICK, T_INT(gNB->Mod_id), T_INT(frame_tx), T_INT(slot_tx));
 
-  /* hack to remove UEs */
-  extern int rnti_to_remove[10];
-  extern volatile int rnti_to_remove_count;
-  extern pthread_mutex_t rnti_to_remove_mutex;
-  if (pthread_mutex_lock(&rnti_to_remove_mutex)) exit(1);
-  int up_removed = 0;
-  int down_removed = 0;
-  int pucch_removed = 0;
-  for (int i = 0; i < rnti_to_remove_count; i++) {
-    LOG_W(NR_PHY, "to remove rnti 0x%04x\n", rnti_to_remove[i]);
-    void clean_gNB_ulsch(NR_gNB_ULSCH_t *ulsch);
-    void clean_gNB_dlsch(NR_gNB_DLSCH_t *dlsch);
-    int j;
-    for (j = 0; j < NUMBER_OF_NR_ULSCH_MAX; j++)
-      if (gNB->ulsch[j]->rnti == rnti_to_remove[i]) {
-        gNB->ulsch[j]->rnti = 0;
-        gNB->ulsch[j]->harq_mask = 0;
-        int h;
-        for (h = 0; h < NR_MAX_ULSCH_HARQ_PROCESSES; h++) {
-          gNB->ulsch[j]->harq_processes[h]->status = SCH_IDLE;
-          gNB->ulsch[j]->harq_processes[h]->round  = 0;
-          gNB->ulsch[j]->harq_processes[h]->handled = 0;
-        }
-        up_removed++;
-      }
-    for (j = 0; j < NUMBER_OF_NR_PUCCH_MAX; j++)
-      if (gNB->pucch[j]->active > 0 &&
-          gNB->pucch[j]->pucch_pdu.rnti == rnti_to_remove[i]) {
-        gNB->pucch[j]->active = 0;
-        gNB->pucch[j]->pucch_pdu.rnti = 0;
-        pucch_removed++;
-      }
-#if 0
-    for (j = 0; j < NUMBER_OF_NR_PDCCH_MAX; j++)
-      gNB->pdcch_pdu[j].frame = -1;
-    for (j = 0; j < NUMBER_OF_NR_PDCCH_MAX; j++)
-      gNB->ul_pdcch_pdu[j].frame = -1;
-    for (j = 0; j < NUMBER_OF_NR_PRACH_MAX; j++)
-      gNB->prach_vars.list[j].frame = -1;
-#endif
-  }
-  if (rnti_to_remove_count) LOG_W(NR_PHY, "to remove rnti_to_remove_count=%d, up_removed=%d down_removed=%d pucch_removed=%d\n", rnti_to_remove_count, up_removed, down_removed, pucch_removed);
-  rnti_to_remove_count = 0;
-  if (pthread_mutex_unlock(&rnti_to_remove_mutex)) exit(1);
+  reset_active_stats(gNB, frame_tx);
+  reset_active_ulsch(gNB, frame_tx);
 
   // RX processing
-  int rx_slot_type         = nr_slot_select(cfg,frame_rx,slot_rx);
+  int rx_slot_type = nr_slot_select(cfg, frame_rx, slot_rx);
   if (rx_slot_type == NR_UPLINK_SLOT || rx_slot_type == NR_MIXED_SLOT) {
     // UE-specific RX processing for subframe n
     // TODO: check if this is correct for PARALLEL_RU_L1_TRX_SPLIT
@@ -254,7 +216,7 @@ void rx_func(void *param) {
   stop_meas(&gNB->ul_indication_stats);
 
   int tx_slot_type = nr_slot_select(cfg,frame_rx,slot_tx);
-  if (tx_slot_type == NR_DOWNLINK_SLOT || tx_slot_type == NR_MIXED_SLOT) {
+  if ((tx_slot_type == NR_DOWNLINK_SLOT || tx_slot_type == NR_MIXED_SLOT) && NFAPI_MODE != NFAPI_MODE_PNF) {
     notifiedFIFO_elt_t *res;
     processingData_L1tx_t *syncMsg;
     // Its a FIFO so it maitains the order in which the MAC fills the messages
@@ -470,7 +432,7 @@ void init_gNB_Tpool(int inst) {
     pushNotifiedFIFO(&gNB->L1_tx_free, msgL1Tx); // to unblock the process in the beginning
   }
 
-  if ((!get_softmodem_params()->emulate_l1) && (!IS_SOFTMODEM_NOSTATS_BIT))
+  if ((!get_softmodem_params()->emulate_l1) && (!IS_SOFTMODEM_NOSTATS_BIT) && (NFAPI_MODE!=NFAPI_MODE_VNF))
      threadCreate(&proc->L1_stats_thread,nrL1_stats_thread,(void*)gNB,"L1_stats",-1,OAI_PRIORITY_RT_LOW);
 
   LOG_I(PHY,"Creating thread for TX reordering and dispatching to RU\n");
@@ -546,7 +508,7 @@ void init_eNB_afterRU(void) {
     gNB = RC.gNB[inst];
     gNB->ldpc_offload_flag = ldpc_offload_flag;
 
-    phy_init_nr_gNB(gNB,0,0);
+    phy_init_nr_gNB(gNB);
 
     // map antennas and PRACH signals to gNB RX
     if (0) AssertFatal(gNB->num_RU>0,"Number of RU attached to gNB %d is zero\n",gNB->Mod_id);
@@ -565,7 +527,7 @@ void init_eNB_afterRU(void) {
       for (i=0; i<gNB->RU_list[ru_id]->nb_rx; aa++,i++) {
         LOG_I(PHY,"Attaching RU %d antenna %d to gNB antenna %d\n",gNB->RU_list[ru_id]->idx,i,aa);
         gNB->prach_vars.rxsigF[aa]    =  gNB->RU_list[ru_id]->prach_rxsigF[0][i];
-        gNB->common_vars.rxdataF[aa]     =  gNB->RU_list[ru_id]->common.rxdataF[i];
+        gNB->common_vars.rxdataF[aa]     =  (c16_t *)gNB->RU_list[ru_id]->common.rxdataF[i];
       }
     }
 

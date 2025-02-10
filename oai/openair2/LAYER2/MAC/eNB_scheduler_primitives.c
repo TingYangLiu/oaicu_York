@@ -39,8 +39,6 @@
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "common/utils/LOG/vcd_signal_dumper.h"
 #include "UTIL/OPT/opt.h"
-#include "OCG.h"
-#include "OCG_extern.h"
 
 #include "RRC/LTE/rrc_extern.h"
 #include "RRC/L2_INTERFACE/openair_rrc_L2_interface.h"
@@ -58,10 +56,36 @@ extern uint16_t frame_cnt;
 
 #include "common/ran_context.h"
 #include "SCHED/sched_common.h"
+#include "openair2/LAYER2/MAC/mac_extern.h"
+/*
+ * If the CQI is low, then scheduler will use a higher aggregation level and lower aggregation level otherwise
+ * this is also dependent to transmission mode, where an offset could be defined
+ */
+// the follwoing three tables are calibrated for TXMODE 1 and 2
+static const uint8_t cqi2fmt0_agg[MAX_SUPPORTED_BW][CQI_VALUE_RANGE] = {
+    {3, 3, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // 1.4_DCI0_CRC_Size= 37 bits
+    //{3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0}, // 5_DCI0_CRC_SIZE = 41
+    {3, 3, 3, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}, // 5_DCI0_CRC_SIZE = 41
+    {3, 3, 3, 3, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0}, // 10_DCI0_CRC_SIZE = 43
+    {3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0} // 20_DCI0_CRC_SIZE = 44
+};
+
+static const uint8_t cqi2fmt1x_agg[MAX_SUPPORTED_BW][CQI_VALUE_RANGE] = {
+    {3, 3, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // 1.4_DCI0_CRC_Size < 38 bits
+    {3, 3, 3, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}, // 5_DCI0_CRC_SIZE  < 43
+    {3, 3, 3, 3, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0}, // 10_DCI0_CRC_SIZE  < 47
+    {3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0} // 20_DCI0_CRC_SIZE  < 55
+};
+
+static const uint8_t cqi2fmt2x_agg[MAX_SUPPORTED_BW][CQI_VALUE_RANGE] = {
+    {3, 3, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // 1.4_DCI0_CRC_Size= 47 bits
+    {3, 3, 3, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}, // 5_DCI0_CRC_SIZE = 55
+    {3, 3, 3, 3, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0}, // 10_DCI0_CRC_SIZE = 59
+    {3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0} // 20_DCI0_CRC_SIZE = 64
+};
 
 extern RAN_CONTEXT_t RC;
-
-
+eNB_DLSCH_INFO eNB_dlsch_info[NUMBER_OF_eNB_MAX][MAX_NUM_CCs][MAX_MOBILES_PER_ENB]; // eNBxUE = 8x8
 //------------------------------------------------------------------------------
 int
 choose(int n,
@@ -1940,8 +1964,6 @@ narrowband_to_first_rb(COMMON_channels_t *cc,
 
   return 0;
 }
-
-//------------------------------------------------------------------------------
 void
 init_ue_sched_info(void)
 //------------------------------------------------------------------------------
@@ -1951,15 +1973,7 @@ init_ue_sched_info(void)
   for (i = 0; i < NUMBER_OF_eNB_MAX; i++) {
     for (k = 0; k < MAX_NUM_CCs; k++) {
       for (j = 0; j < MAX_MOBILES_PER_ENB; j++) {
-        // init DL
-        eNB_dlsch_info[i][k][j].weight = 0;
-        eNB_dlsch_info[i][k][j].subframe = 0;
-        eNB_dlsch_info[i][k][j].serving_num = 0;
         eNB_dlsch_info[i][k][j].status = S_DL_NONE;
-        // init UL
-        eNB_ulsch_info[i][k][j].subframe = 0;
-        eNB_ulsch_info[i][k][j].serving_num = 0;
-        eNB_ulsch_info[i][k][j].status = S_UL_NONE;
       }
     }
   }
@@ -1968,27 +1982,16 @@ init_ue_sched_info(void)
 }
 
 //------------------------------------------------------------------------------
-unsigned char
-get_ue_weight(module_id_t module_idP,
-              int CC_idP,
-              int ue_idP)
-//------------------------------------------------------------------------------
-{
-  return (eNB_dlsch_info[module_idP][CC_idP][ue_idP].weight);
-}
-
-//------------------------------------------------------------------------------
 int
 find_UE_id(module_id_t mod_idP,
            rnti_t rntiP)
 //------------------------------------------------------------------------------
 {
-  int UE_id;
   UE_info_t *UE_info = &RC.mac[mod_idP]->UE_info;
   if(!UE_info)
     return -1;
 
-  for (UE_id = 0; UE_id < MAX_MOBILES_PER_ENB; UE_id++) {
+  for (int UE_id = 0; UE_id < MAX_MOBILES_PER_ENB; UE_id++) {
     if (UE_info->active[UE_id] == true) {
       int CC_id = UE_PCCID(mod_idP, UE_id);
       if (CC_id>=0 && CC_id<NFAPI_CC_MAX && UE_info->UE_template[CC_id][UE_id].rnti == rntiP) {
@@ -2058,7 +2061,6 @@ UE_RNTI(module_id_t mod_idP,
   }
 
   //LOG_D(MAC, "[eNB %d] Couldn't find RNTI for UE %d\n", mod_idP, ue_idP);
-  //display_backtrace();
   return (NOT_A_RNTI);
 }
 
@@ -2138,6 +2140,7 @@ inline void add_ue_list(UE_list_t *listP, int UE_id) {
   while (*cur >= 0)
     cur = &listP->next[*cur];
   *cur = UE_id;
+  LOG_D(MAC, "added UE %d in UE list\n", UE_id);
 }
 
 //------------------------------------------------------------------------------
@@ -2239,9 +2242,7 @@ add_new_ue(module_id_t mod_idP,
       UE_info->UE_sched_ctrl[UE_id].round[cc_idP][j] = 8;
       UE_info->UE_sched_ctrl[UE_id].round_UL[cc_idP][j] = 0;
     }
-
-    eNB_ulsch_info[mod_idP][cc_idP][UE_id].status = S_UL_WAITING;
-    eNB_dlsch_info[mod_idP][cc_idP][UE_id].status = S_DL_WAITING;
+    eNB_dlsch_info[mod_idP][cc_idP][UE_id].status = S_DL_NONE;
     LOG_D(MAC, "[eNB %d] Add UE_id %d on Primary CC_id %d: rnti %x\n",
           mod_idP,
           UE_id,
@@ -2317,13 +2318,7 @@ rrc_mac_remove_ue(module_id_t mod_idP,
   ue_stats->total_pdu_bytes_rx = 0;
   ue_stats->total_num_pdus_rx = 0;
   ue_stats->total_num_errors_rx = 0;
-  eNB_ulsch_info[mod_idP][pCC_id][UE_id].rnti = NOT_A_RNTI;
-  eNB_ulsch_info[mod_idP][pCC_id][UE_id].status = S_UL_NONE;
-  eNB_ulsch_info[mod_idP][pCC_id][UE_id].serving_num = 0;
-  eNB_dlsch_info[mod_idP][pCC_id][UE_id].rnti = NOT_A_RNTI;
   eNB_dlsch_info[mod_idP][pCC_id][UE_id].status = S_DL_NONE;
-  eNB_dlsch_info[mod_idP][pCC_id][UE_id].serving_num = 0;
-
   // check if this has an RA process active
   if (find_RA_id(mod_idP,
                  pCC_id,
@@ -2447,7 +2442,7 @@ get_tmode(module_id_t module_idP,
     return (cc->p_eNB);
   }
 
-  AssertFatal(1 == 0, "Shouldn't be here\n");
+  AssertFatal(false, "Shouldn't be here, antenna info: %p, %d cc:%d, ue:%d active: %d; \n", physicalConfigDedicated->antennaInfo, physicalConfigDedicated->antennaInfo->present,CC_idP, UE_idP, is_UE_active( module_idP,UE_idP ) );
   return 0;
 }
 
@@ -2688,7 +2683,7 @@ allocate_prbs_sub(int nb_rb,
           break;
 
         case 25:
-          if ((check == N_RBG - 1)) {
+          if (check == N_RBG - 1) {
             nb_rb--;
           } else {
             nb_rb -= 2;
@@ -2697,7 +2692,7 @@ allocate_prbs_sub(int nb_rb,
           break;
 
         case 50:
-          if ((check == N_RBG - 1)) {
+          if (check == N_RBG - 1) {
             nb_rb -= 2;
           } else {
             nb_rb -= 3;

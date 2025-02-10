@@ -33,8 +33,8 @@
 #include "NR_MAC_gNB/mac_proto.h"
 #include "NR_MAC_COMMON/nr_mac_extern.h"
 #include "assertions.h"
+#include "nr_pdcp/nr_pdcp_oai_api.h"
 
-#include "LAYER2/nr_pdcp/nr_pdcp_entity.h"
 #include "RRC/NR/nr_rrc_defs.h"
 #include "common/utils/LOG/log.h"
 //#include "RRC/L2_INTERFACE/openair_rrc_L2_interface.h"
@@ -238,8 +238,8 @@ void mac_top_init_gNB(ngran_node_t node_type)
         RC.nrmac[i]->pre_processor_dl = nr_preprocessor_phytest;
         RC.nrmac[i]->pre_processor_ul = nr_ul_preprocessor_phytest;
       } else {
-        RC.nrmac[i]->pre_processor_dl = nr_init_fr1_dlsch_preprocessor(i, 0);
-        RC.nrmac[i]->pre_processor_ul = nr_init_fr1_ulsch_preprocessor(i, 0);
+        RC.nrmac[i]->pre_processor_dl = nr_init_fr1_dlsch_preprocessor(0);
+        RC.nrmac[i]->pre_processor_ul = nr_init_fr1_ulsch_preprocessor(0);
       }
       if (!IS_SOFTMODEM_NOSTATS_BIT)
          threadCreate(&RC.nrmac[i]->stats_thread, nrmac_stats_thread, (void*)RC.nrmac[i], "MAC_STATS", -1,     sched_get_priority_min(SCHED_OAI)+1 );
@@ -249,13 +249,10 @@ void mac_top_init_gNB(ngran_node_t node_type)
     AssertFatal(rlc_module_init(1) == 0,"Could not initialize RLC layer\n");
 
     // These should be out of here later
-    pdcp_layer_init();
+    if (get_softmodem_params()->usim_test == 0 ) nr_pdcp_layer_init();
 
     if(IS_SOFTMODEM_NOS1 && get_softmodem_params()->phy_test)
       nr_DRB_preconfiguration(0x1234);
-
-    rrc_init_nr_global_param();
-
 
   } else {
     RC.nrmac = NULL;

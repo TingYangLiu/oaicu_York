@@ -41,7 +41,7 @@
 #endif
 #include "SCHED/defs.h"
 #include "SCHED/vars.h"
-#include "sdr/COMMON/defs.h"
+#include "radio/COMMON/defs.h"
 #include "LAYER2/MAC/vars.h"
 
 #ifdef XFORMS
@@ -50,7 +50,6 @@
 #endif //XFORMS
 
 
-#include "OCG_vars.h"
 #include "openair_hw.h"
 
 #define BW 5.0

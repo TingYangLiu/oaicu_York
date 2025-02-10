@@ -36,7 +36,7 @@
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 #include "RRC/LTE/rrc_defs.h"
-#include "COMMON/platform_constants.h"
+#include "common/platform_constants.h"
 #include "COMMON/platform_types.h"
 #include "LTE_DRB-ToAddMod.h"
 #include "LTE_DRB-ToAddModList.h"
@@ -122,7 +122,6 @@ extern uint32_t Pdcp_stats_rx_iat[MAX_eNB][MAX_MOBILES_PER_ENB][NB_RB_MAX];
 extern uint32_t Pdcp_stats_rx_outoforder[MAX_eNB][MAX_MOBILES_PER_ENB][NB_RB_MAX];
 
 void pdcp_update_perioidical_stats(const protocol_ctxt_t *const  ctxt_pP);
-
 
 /*Packet Probing for agent PDCP*/
 //uint64_t *pdcp_packet_counter;
@@ -403,9 +402,7 @@ void pdcp_mbms_run            (
 void pdcp_run            (
   const protocol_ctxt_t *const  ctxt_pP);
 uint64_t pdcp_module_init (uint64_t pdcp_optmask, int ue_id);
-uint64_t nr_pdcp_module_init(uint64_t _pdcp_optmask, int id);
 void pdcp_module_cleanup (void);
-void nr_ip_over_LTE_DRB_preconfiguration (void);
 void pdcp_layer_init     (void);
 void pdcp_layer_cleanup  (void);
 #define PDCP2NW_DRIVER_FIFO 21
@@ -421,10 +418,6 @@ pdcp_data_ind_func_t get_pdcp_data_ind_func(void);
 //-----------------------------------------------------------------------------
 int pdcp_fifo_flush_mbms_sdus                      ( const protocol_ctxt_t *const  ctxt_pP);
 int pdcp_fifo_read_input_mbms_sdus_fromtun       ( const protocol_ctxt_t *const  ctxt_pP);
-rlc_op_status_t cu_send_to_du(const protocol_ctxt_t *const ctxt_pP,
-			       const srb_flag_t srb_flagP, const MBMS_flag_t MBMS_flagP,
-			       const rb_id_t rb_idP, const mui_t muiP,
-			       confirm_t confirmP, sdu_size_t sdu_sizeP, mem_block_t *sdu_pP, const uint32_t *const, const uint32_t *const);
 
 /*
  * Following two types are utilized between NAS driver and PDCP
